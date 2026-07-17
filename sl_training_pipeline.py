@@ -1,0 +1,784 @@
+"""
+sl_training_pipeline.py
+
+End-to-end shallow-learning pipeline for:
+- SVM (RBF)
+- Random Forest
+- XGBoost
+- k-NN
+
+Workflow:
+1) Load feature CSV with split column (train/test)
+2) Build an internal validation split from the TRAIN rows only
+3) Hyperparameter search on the internal TRAIN subset (Stratified K-Fold CV)
+4) Evaluate best model on the internal VAL subset
+5) Refit best model on the full original TRAIN split, evaluate once on TEST
+6) Save models, metrics, confusion matrices, and run metadata
+"""
+
+from __future__ import annotations
+
+import json
+import time
+from contextlib import contextmanager
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Tuple
+
+import joblib
+import numpy as np
+import pandas as pd
+
+from sklearn.base import clone
+from sklearn.model_selection import (
+    GridSearchCV,
+    ParameterGrid,
+    StratifiedKFold,
+    StratifiedShuffleSplit,
+)
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.metrics import (
+    accuracy_score,
+    precision_recall_fscore_support,
+    classification_report,
+    confusion_matrix,
+)
+from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from joblib import parallel
+
+try:
+    from tqdm.auto import tqdm
+except ImportError:
+    tqdm = None
+
+
+METADATA_COLUMNS = {"sample_id", "sample_name", "orig_filename", "species", "split"}
+DUPLICATE_DESCRIPTIVE_FEATURES = {"affine_6"}
+DUPLICATE_LEGACY_FEATURES = {"f39"}
+
+
+def _import_pyplot():
+    import matplotlib.pyplot as plt
+
+    return plt
+
+
+def set_seed(seed: int = 42) -> None:
+    import random
+
+    random.seed(seed)
+    np.random.seed(seed)
+
+
+def format_seconds(seconds: float) -> str:
+    total_seconds = max(0.0, float(seconds))
+    minutes, secs = divmod(total_seconds, 60.0)
+    hours, minutes = divmod(minutes, 60.0)
+
+    if hours >= 1:
+        return f"{int(hours)}h {int(minutes)}m {secs:.1f}s"
+    if minutes >= 1:
+        return f"{int(minutes)}m {secs:.1f}s"
+    return f"{secs:.1f}s"
+
+
+@contextmanager
+def tqdm_joblib(total: int, desc: str):
+    if tqdm is None:
+        yield None
+        return
+
+    progress_bar = tqdm(total=total, desc=desc, unit="fit", dynamic_ncols=True)
+    original_callback = parallel.BatchCompletionCallBack
+
+    class TqdmBatchCompletionCallback(original_callback):
+        def __call__(self, *args, **kwargs):
+            progress_bar.update(self.batch_size)
+            return super().__call__(*args, **kwargs)
+
+    parallel.BatchCompletionCallBack = TqdmBatchCompletionCallback
+    try:
+        yield progress_bar
+    finally:
+        parallel.BatchCompletionCallBack = original_callback
+        progress_bar.close()
+
+
+def get_feature_columns(df: pd.DataFrame) -> list[str]:
+    numeric_cols = [
+        c for c in df.columns
+        if c not in METADATA_COLUMNS and pd.api.types.is_numeric_dtype(df[c])
+    ]
+
+    legacy_f_cols = [
+        c for c in numeric_cols
+        if c.startswith("f") and c not in DUPLICATE_LEGACY_FEATURES
+    ]
+    descriptive_cols = [
+        c for c in numeric_cols
+        if not c.startswith("f") and c not in DUPLICATE_DESCRIPTIVE_FEATURES
+    ]
+
+    if descriptive_cols:
+        return descriptive_cols
+    return legacy_f_cols
+
+
+def assert_all_finite(name: str, X: np.ndarray) -> None:
+    finite_mask = np.isfinite(X)
+    if finite_mask.all():
+        return
+
+    invalid_total = int((~finite_mask).sum())
+    bad_rows, bad_cols = np.where(~finite_mask)
+    preview = list(zip(bad_rows[:5].tolist(), bad_cols[:5].tolist()))
+    raise ValueError(
+        f"{name} contains {invalid_total} non-finite values (NaN or inf). "
+        f"First invalid positions: {preview}"
+    )
+
+
+def make_balanced_subset(
+    X: np.ndarray,
+    y: np.ndarray,
+    seed: int = 42,
+) -> tuple[np.ndarray, np.ndarray, dict[str, int]]:
+    """
+    Downsample every class to the smallest class count so evaluation uses the
+    same support for each class.
+    """
+    classes, counts = np.unique(y, return_counts=True)
+    min_count = int(counts.min())
+    rng = np.random.default_rng(seed)
+
+    selected_indices = []
+    for cls in classes:
+        cls_indices = np.flatnonzero(y == cls)
+        chosen = rng.choice(cls_indices, size=min_count, replace=False)
+        selected_indices.append(np.sort(chosen))
+
+    selected_indices = np.sort(np.concatenate(selected_indices))
+    support_summary = {str(cls): min_count for cls in classes}
+    return X[selected_indices], y[selected_indices], support_summary
+
+
+def prepare_run_output_dirs(output_root: Path) -> dict[str, Path]:
+    output_root.mkdir(parents=True, exist_ok=True)
+    runs_dir = output_root / "runs"
+    runs_dir.mkdir(parents=True, exist_ok=True)
+
+    run_name = datetime.now().strftime("run_%Y%m%d_%H%M%S")
+    run_dir = runs_dir / run_name
+    run_dir.mkdir(parents=True, exist_ok=False)
+
+    models_dir = run_dir / "models"
+    reports_dir = run_dir / "reports"
+    cm_dir = run_dir / "cm"
+    metadata_dir = run_dir / "metadata"
+
+    for path in (models_dir, reports_dir, cm_dir, metadata_dir):
+        path.mkdir(parents=True, exist_ok=True)
+
+    (output_root / "latest_run.txt").write_text(str(run_dir), encoding="utf-8")
+
+    return {
+        "output_root": output_root,
+        "runs_dir": runs_dir,
+        "run_dir": run_dir,
+        "models_dir": models_dir,
+        "reports_dir": reports_dir,
+        "cm_dir": cm_dir,
+        "metadata_dir": metadata_dir,
+    }
+
+
+def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42) -> Dict[str, Any]:
+    df = pd.read_csv(csv_path)
+    feature_cols = get_feature_columns(df)
+
+    if not feature_cols:
+        raise ValueError(
+            "No feature columns found. Expected descriptive feature names or legacy f-columns."
+        )
+    if "species" not in df.columns:
+        raise ValueError("Missing required 'species' column.")
+    if "split" not in df.columns:
+        raise ValueError("Missing required 'split' column.")
+
+    X = df[feature_cols].to_numpy(dtype=np.float32)
+    y_raw = df["species"].to_numpy()
+    label_encoder = LabelEncoder()
+    y = label_encoder.fit_transform(y_raw)
+    class_names = label_encoder.classes_
+    splits = df["split"].to_numpy()
+
+    train_mask = splits == "train"
+    test_mask = splits == "test"
+
+    if not train_mask.any():
+        raise ValueError("No rows with split='train'.")
+    if not test_mask.any():
+        raise ValueError("No rows with split='test'.")
+
+    if np.any(splits == "val"):
+        print("[INFO] Existing 'val' rows detected, but they will be ignored.")
+        print("[INFO] Validation is now created internally from the TRAIN split only.")
+
+    X_train_full = X[train_mask]
+    y_train_full = y[train_mask]
+    X_test = X[test_mask]
+    y_test = y[test_mask]
+
+    if not 0.0 < val_fraction < 1.0:
+        raise ValueError("val_fraction must be between 0 and 1.")
+
+    splitter = StratifiedShuffleSplit(n_splits=1, test_size=val_fraction, random_state=seed)
+    try:
+        train_idx, val_idx = next(splitter.split(X_train_full, y_train_full))
+    except ValueError as exc:
+        raise ValueError(
+            "Could not create an internal stratified validation split from the TRAIN rows. "
+            "Check whether every class has enough samples in the train split."
+        ) from exc
+
+    X_train = X_train_full[train_idx]
+    y_train = y_train_full[train_idx]
+    X_val = X_train_full[val_idx]
+    y_val = y_train_full[val_idx]
+    X_val_balanced, y_val_balanced, val_balanced_support = make_balanced_subset(
+        X_val, y_val, seed=seed
+    )
+    X_test_balanced, y_test_balanced, test_balanced_support = make_balanced_subset(
+        X_test, y_test, seed=seed
+    )
+
+    assert_all_finite("X_train", X_train)
+    assert_all_finite("X_val", X_val)
+    assert_all_finite("X_val_balanced", X_val_balanced)
+    assert_all_finite("X_test", X_test)
+    assert_all_finite("X_test_balanced", X_test_balanced)
+
+    feature_schema = (
+        "descriptive"
+        if feature_cols and any(not c.startswith("f") for c in feature_cols)
+        else "legacy_f"
+    )
+
+    metadata_cols_present = [
+        c for c in ["sample_id", "sample_name", "orig_filename", "species", "split"]
+        if c in df.columns
+    ]
+    absolute_train_indices = np.flatnonzero(train_mask)
+    absolute_test_indices = np.flatnonzero(test_mask)
+    absolute_internal_train = absolute_train_indices[train_idx]
+    absolute_internal_val = absolute_train_indices[val_idx]
+
+    assignment = pd.Series("ignored", index=df.index, dtype=object)
+    assignment.iloc[absolute_internal_train] = "train_internal"
+    assignment.iloc[absolute_internal_val] = "val_internal"
+    assignment.iloc[absolute_test_indices] = "test"
+
+    selected_indices = np.concatenate(
+        [absolute_internal_train, absolute_internal_val, absolute_test_indices]
+    )
+    split_membership_df = df.loc[selected_indices, metadata_cols_present].copy()
+    split_membership_df["pipeline_split"] = assignment.loc[selected_indices].values
+    split_membership_df = split_membership_df.reset_index(names="row_index")
+
+    split_summary = {
+        "train_internal_samples": int(X_train.shape[0]),
+        "val_internal_samples": int(X_val.shape[0]),
+        "val_balanced_samples": int(X_val_balanced.shape[0]),
+        "train_full_samples": int(X_train_full.shape[0]),
+        "test_samples": int(X_test.shape[0]),
+        "test_balanced_samples": int(X_test_balanced.shape[0]),
+        "n_features": int(X.shape[1]),
+        "feature_schema": feature_schema,
+        "internal_val_fraction": float(val_fraction),
+        "n_classes": int(len(class_names)),
+    }
+
+    return {
+        "X_train": X_train,
+        "y_train": y_train,
+        "X_val": X_val,
+        "y_val": y_val,
+        "X_train_full": X_train_full,
+        "y_train_full": y_train_full,
+        "X_test": X_test,
+        "y_test": y_test,
+        "X_val_balanced": X_val_balanced,
+        "y_val_balanced": y_val_balanced,
+        "X_test_balanced": X_test_balanced,
+        "y_test_balanced": y_test_balanced,
+        "classes": class_names,
+        "label_encoder": label_encoder,
+        "n_features": X.shape[1],
+        "feature_cols": feature_cols,
+        "val_fraction": val_fraction,
+        "feature_schema": feature_schema,
+        "split_membership_df": split_membership_df,
+        "split_summary": split_summary,
+        "val_balanced_support": val_balanced_support,
+        "test_balanced_support": test_balanced_support,
+    }
+
+
+def make_model_spaces(
+    seed: int = 42,
+    tree_model_n_jobs: int = 1,
+    xgb_n_jobs: int = 1,
+) -> Dict[str, Tuple[Pipeline, Dict[str, list]]]:
+    spaces: Dict[str, Tuple[Pipeline, Dict[str, list]]] = {}
+
+    svm_pipe = Pipeline(
+        [
+            ("scaler", StandardScaler()),
+            ("clf", SVC(kernel="rbf", probability=True, random_state=seed)),
+        ]
+    )
+    svm_grid = {
+        "clf__C": [0.1, 1.0, 10.0, 30.0],
+        "clf__gamma": ["scale", 0.1, 0.01, 0.001],
+    }
+    spaces["svm_rbf"] = (svm_pipe, svm_grid)
+
+    rf_pipe = Pipeline(
+        [
+            ("clf", RandomForestClassifier(random_state=seed, n_jobs=tree_model_n_jobs)),
+        ]
+    )
+    rf_grid = {
+        "clf__n_estimators": [200, 400],
+        "clf__max_depth": [None, 15, 30],
+        "clf__min_samples_split": [2, 5],
+        "clf__min_samples_leaf": [1, 2],
+    }
+    spaces["random_forest"] = (rf_pipe, rf_grid)
+
+    knn_pipe = Pipeline(
+        [
+            ("scaler", StandardScaler()),
+            ("clf", KNeighborsClassifier()),
+        ]
+    )
+    knn_grid = {
+        "clf__n_neighbors": [3, 5, 7, 11],
+        "clf__weights": ["uniform", "distance"],
+        "clf__metric": ["minkowski"],
+        "clf__p": [1, 2],
+    }
+    spaces["knn"] = (knn_pipe, knn_grid)
+
+    try:
+        from xgboost import XGBClassifier
+
+        xgb_pipe = Pipeline(
+            [
+                (
+                    "clf",
+                    XGBClassifier(
+                        objective="multi:softprob",
+                        eval_metric="mlogloss",
+                        random_state=seed,
+                        tree_method="hist",
+                        verbosity=0,
+                        n_jobs=xgb_n_jobs,
+                    ),
+                )
+            ]
+        )
+
+        # Active XGBoost grid: FAST
+        # Purpose:
+        # - quick benchmarking
+        # - debugging the full pipeline without letting XGBoost dominate runtime
+        # Grid size:
+        # - 2 * 2 * 1 * 1 * 2 = 8 combinations
+        # - with 5 CV folds = 40 fits
+        xgb_grid = {
+            "clf__n_estimators": [100, 200],
+            "clf__max_depth": [3, 4],
+            "clf__learning_rate": [0.1],
+            "clf__subsample": [0.8],
+            "clf__colsample_bytree": [0.8, 1.0],
+        }
+
+        # Alternative XGBoost grid: BALANCED
+        # Purpose:
+        # - regular experiments
+        # - stronger search than FAST without the full runtime cost of THOROUGH
+        # Grid size:
+        # - 3 * 2 * 2 * 2 * 2 = 48 combinations
+        # - with 5 CV folds = 240 fits
+        #
+        # xgb_grid = {
+        #     "clf__n_estimators": [100, 200, 300],
+        #     "clf__max_depth": [4, 6],
+        #     "clf__learning_rate": [0.05, 0.1],
+        #     "clf__subsample": [0.8, 1.0],
+        #     "clf__colsample_bytree": [0.8, 1.0],
+        # }
+
+        # Alternative XGBoost grid: THOROUGH
+        # Purpose:
+        # - final tuning when XGBoost already looks promising
+        # - much slower; not ideal for routine runs
+        # Grid size:
+        # - 3 * 4 * 3 * 2 * 2 = 144 combinations
+        # - with 5 CV folds = 720 fits
+        #
+        # xgb_grid = {
+        #     "clf__n_estimators": [100, 200, 400],
+        #     "clf__max_depth": [3, 4, 6, 8],
+        #     "clf__learning_rate": [0.03, 0.05, 0.1],
+        #     "clf__subsample": [0.8, 1.0],
+        #     "clf__colsample_bytree": [0.8, 1.0],
+        # }
+        spaces["xgboost"] = (xgb_pipe, xgb_grid)
+    except ImportError:
+        print("[WARN] xgboost is not installed. Skipping XGBoost model.")
+
+    return spaces
+
+
+def evaluate(
+    model,
+    X: np.ndarray,
+    y_encoded: np.ndarray,
+    label_encoder: LabelEncoder,
+    labels: np.ndarray,
+) -> Dict[str, Any]:
+    y_pred_encoded = np.asarray(model.predict(X), dtype=np.int64)
+    y_true = label_encoder.inverse_transform(np.asarray(y_encoded, dtype=np.int64))
+    y_pred = label_encoder.inverse_transform(y_pred_encoded)
+    acc = accuracy_score(y_true, y_pred)
+    prec, rec, f1, _ = precision_recall_fscore_support(
+        y_true, y_pred, average="macro", zero_division=0
+    )
+    cm = confusion_matrix(y_true, y_pred, labels=labels)
+
+    return {
+        "accuracy": float(acc),
+        "precision_macro": float(prec),
+        "recall_macro": float(rec),
+        "f1_macro": float(f1),
+        "cm": cm,
+        "report_text": classification_report(y_true, y_pred, zero_division=0),
+    }
+
+
+def save_confusion_matrix(cm: np.ndarray, labels: np.ndarray, out_path: Path, title: str) -> None:
+    plt = _import_pyplot()
+    fig, ax = plt.subplots(figsize=(8, 6))
+    im = ax.imshow(cm, interpolation="nearest")
+    ax.set_title(title)
+    plt.colorbar(im, ax=ax)
+    ax.set_xlabel("Predicted")
+    ax.set_ylabel("True")
+    ax.set_xticks(np.arange(len(labels)))
+    ax.set_yticks(np.arange(len(labels)))
+    ax.set_xticklabels(labels, rotation=90)
+    ax.set_yticklabels(labels)
+
+    max_val = cm.max() if cm.size > 0 else 1
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            color = "white" if cm[i, j] > (max_val / 2) else "black"
+            ax.text(j, i, str(cm[i, j]), ha="center", va="center", fontsize=8, color=color)
+
+    plt.tight_layout()
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+
+def main() -> None:
+    # Update these paths to match your machine
+    DATA_CSV_PATH = r"F:/01_Univalle/01_TG/dataset_features/shallow_learning_birds.csv"
+    OUT_DIR = Path(r"F:/01_Univalle/01_TG/sl_outputs")
+
+    SEED = 42
+    CV_FOLDS = 5
+    SCORING = "f1_macro"
+    VAL_FRACTION = 0.2
+    GRIDSEARCH_N_JOBS = -1
+    GRIDSEARCH_PRE_DISPATCH = "2*n_jobs"
+    GRIDSEARCH_VERBOSE = 0
+    TREE_MODEL_N_JOBS = 1
+    XGB_N_JOBS = 1
+
+    total_start = time.perf_counter()
+    stage_timings = []
+    model_timings = []
+
+    set_seed(SEED)
+
+    stage_start = time.perf_counter()
+    paths = prepare_run_output_dirs(OUT_DIR)
+    run_dir = paths["run_dir"]
+    models_dir = paths["models_dir"]
+    reports_dir = paths["reports_dir"]
+    cm_dir = paths["cm_dir"]
+    metadata_dir = paths["metadata_dir"]
+    stage_elapsed = time.perf_counter() - stage_start
+    stage_timings.append({"stage": "prepare_run_output_dirs", "seconds": stage_elapsed})
+    print(f"[TIME] prepare_run_output_dirs: {format_seconds(stage_elapsed)}")
+
+    stage_start = time.perf_counter()
+    data = load_split_dataset(DATA_CSV_PATH, val_fraction=VAL_FRACTION, seed=SEED)
+    stage_elapsed = time.perf_counter() - stage_start
+    stage_timings.append({"stage": "load_split_dataset", "seconds": stage_elapsed})
+    print(f"[TIME] load_split_dataset: {format_seconds(stage_elapsed)}")
+
+    X_train, y_train = data["X_train"], data["y_train"]
+    X_val, y_val = data["X_val"], data["y_val"]
+    X_val_balanced, y_val_balanced = data["X_val_balanced"], data["y_val_balanced"]
+    X_train_full, y_train_full = data["X_train_full"], data["y_train_full"]
+    X_test, y_test = data["X_test"], data["y_test"]
+    X_test_balanced, y_test_balanced = data["X_test_balanced"], data["y_test_balanced"]
+    classes = data["classes"]
+    label_encoder = data["label_encoder"]
+    feature_cols = data["feature_cols"]
+    feature_schema = data["feature_schema"]
+    split_membership_df = data["split_membership_df"]
+    split_summary = data["split_summary"]
+    val_balanced_support = data["val_balanced_support"]
+    test_balanced_support = data["test_balanced_support"]
+
+    print(f"[INFO] Train shape:        {X_train.shape}")
+    print(f"[INFO] Internal val shape: {X_val.shape}")
+    print(f"[INFO] Balanced val shape: {X_val_balanced.shape}")
+    print(f"[INFO] Full train shape:   {X_train_full.shape}")
+    print(f"[INFO] Test shape:         {X_test.shape}")
+    print(f"[INFO] Balanced test shape:{X_test_balanced.shape}")
+    print(f"[INFO] Classes:            {len(classes)}")
+    print(f"[INFO] Feature columns:    {len(feature_cols)}")
+    print(f"[INFO] Feature schema:     {feature_schema}")
+    print(f"[INFO] Run directory:       {run_dir}")
+
+    stage_start = time.perf_counter()
+    with (metadata_dir / "feature_columns.json").open("w", encoding="utf-8") as f:
+        json.dump(feature_cols, f, indent=2)
+    (metadata_dir / "feature_columns.txt").write_text("\n".join(feature_cols), encoding="utf-8")
+    with (metadata_dir / "class_names.json").open("w", encoding="utf-8") as f:
+        json.dump(classes.tolist(), f, indent=2)
+    joblib.dump(label_encoder, metadata_dir / "label_encoder.pkl")
+    with (metadata_dir / "run_config.json").open("w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "data_csv_path": DATA_CSV_PATH,
+                "seed": SEED,
+                "cv_folds": CV_FOLDS,
+                "scoring": SCORING,
+                "internal_val_fraction": VAL_FRACTION,
+                "gridsearch_n_jobs": GRIDSEARCH_N_JOBS,
+                "gridsearch_pre_dispatch": GRIDSEARCH_PRE_DISPATCH,
+                "tree_model_n_jobs": TREE_MODEL_N_JOBS,
+                "xgb_n_jobs": XGB_N_JOBS,
+            },
+            f,
+            indent=2,
+        )
+    with (metadata_dir / "split_summary.json").open("w", encoding="utf-8") as f:
+        json.dump(split_summary, f, indent=2)
+    with (metadata_dir / "balanced_eval_support.json").open("w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "internal_validation": val_balanced_support,
+                "test": test_balanced_support,
+            },
+            f,
+            indent=2,
+        )
+    split_membership_df.to_csv(metadata_dir / "split_membership.csv", index=False)
+    stage_elapsed = time.perf_counter() - stage_start
+    stage_timings.append({"stage": "save_initial_metadata", "seconds": stage_elapsed})
+    print(f"[TIME] save_initial_metadata: {format_seconds(stage_elapsed)}")
+
+    stage_start = time.perf_counter()
+    cv = StratifiedKFold(n_splits=CV_FOLDS, shuffle=True, random_state=SEED)
+    spaces = make_model_spaces(
+        seed=SEED,
+        tree_model_n_jobs=TREE_MODEL_N_JOBS,
+        xgb_n_jobs=XGB_N_JOBS,
+    )
+    stage_elapsed = time.perf_counter() - stage_start
+    stage_timings.append({"stage": "build_model_spaces", "seconds": stage_elapsed})
+    print(f"[TIME] build_model_spaces: {format_seconds(stage_elapsed)}")
+
+    if not spaces:
+        raise RuntimeError("No model spaces available.")
+
+    val_rows = []
+    test_rows = []
+    best_models_train = {}
+    best_params = {}
+
+    for model_name, (pipe, grid) in spaces.items():
+        print("\n" + "=" * 70)
+        print(f"[INFO] Tuning model: {model_name}")
+        model_stage_start = time.perf_counter()
+        n_candidates = len(list(ParameterGrid(grid)))
+        total_cv_fits = n_candidates * CV_FOLDS
+        print(f"[INFO] Grid candidates:    {n_candidates}")
+        print(f"[INFO] Expected CV fits:  {total_cv_fits}")
+
+        gs = GridSearchCV(
+            estimator=pipe,
+            param_grid=grid,
+            scoring=SCORING,
+            cv=cv,
+            n_jobs=GRIDSEARCH_N_JOBS,
+            pre_dispatch=GRIDSEARCH_PRE_DISPATCH,
+            refit=True,
+            error_score="raise",
+            verbose=GRIDSEARCH_VERBOSE,
+        )
+        with tqdm_joblib(total=total_cv_fits, desc=f"{model_name} CV") as progress_bar:
+            gs.fit(X_train, y_train)
+            if progress_bar is not None:
+                progress_bar.set_postfix_str("refit")
+        tuning_elapsed = time.perf_counter() - model_stage_start
+
+        best_model = gs.best_estimator_
+        best_models_train[model_name] = best_model
+        best_params[model_name] = gs.best_params_
+
+        print(f"[INFO] Best {model_name} params: {gs.best_params_}")
+        print(f"[INFO] Best {model_name} CV {SCORING}: {gs.best_score_:.4f}")
+        print(f"[TIME] {model_name} tuning: {format_seconds(tuning_elapsed)}")
+
+        eval_stage_start = time.perf_counter()
+        val_metrics = evaluate(
+            best_model,
+            X_val_balanced,
+            y_val_balanced,
+            label_encoder,
+            classes,
+        )
+        val_rows.append(
+            {
+                "model": model_name,
+                "best_cv_score": float(gs.best_score_),
+                "val_samples_balanced": int(X_val_balanced.shape[0]),
+                "val_accuracy": val_metrics["accuracy"],
+                "val_precision_macro": val_metrics["precision_macro"],
+                "val_recall_macro": val_metrics["recall_macro"],
+                "val_f1_macro": val_metrics["f1_macro"],
+            }
+        )
+
+        report_path = reports_dir / f"{model_name}_internal_val_report.txt"
+        report_path.write_text(val_metrics["report_text"], encoding="utf-8")
+        save_confusion_matrix(
+            val_metrics["cm"],
+            classes,
+            cm_dir / f"{model_name}_internal_val_cm.png",
+            f"{model_name} - Internal VAL (Balanced)",
+        )
+
+        joblib.dump(best_model, models_dir / f"{model_name}_train_only.pkl")
+        validation_elapsed = time.perf_counter() - eval_stage_start
+        total_model_elapsed = time.perf_counter() - model_stage_start
+        print(f"[TIME] {model_name} internal validation + save: {format_seconds(validation_elapsed)}")
+        print(f"[TIME] {model_name} total train-stage time: {format_seconds(total_model_elapsed)}")
+        model_timings.append(
+            {
+                "model": model_name,
+                "phase": "internal_train_and_validation",
+                "seconds": total_model_elapsed,
+                "tuning_seconds": tuning_elapsed,
+                "post_tuning_seconds": validation_elapsed,
+            }
+        )
+
+    for model_name, train_best_model in best_models_train.items():
+        model_stage_start = time.perf_counter()
+        final_model = clone(train_best_model)
+        final_model.fit(X_train_full, y_train_full)
+        refit_elapsed = time.perf_counter() - model_stage_start
+
+        eval_stage_start = time.perf_counter()
+        test_metrics = evaluate(
+            final_model,
+            X_test_balanced,
+            y_test_balanced,
+            label_encoder,
+            classes,
+        )
+        test_rows.append(
+            {
+                "model": model_name,
+                "test_samples_balanced": int(X_test_balanced.shape[0]),
+                "test_accuracy": test_metrics["accuracy"],
+                "test_precision_macro": test_metrics["precision_macro"],
+                "test_recall_macro": test_metrics["recall_macro"],
+                "test_f1_macro": test_metrics["f1_macro"],
+            }
+        )
+
+        report_path = reports_dir / f"{model_name}_test_report.txt"
+        report_path.write_text(test_metrics["report_text"], encoding="utf-8")
+        save_confusion_matrix(
+            test_metrics["cm"],
+            classes,
+            cm_dir / f"{model_name}_test_cm.png",
+            f"{model_name} - TEST (Balanced)",
+        )
+
+        joblib.dump(final_model, models_dir / f"{model_name}_final.pkl")
+        test_eval_elapsed = time.perf_counter() - eval_stage_start
+        total_model_elapsed = time.perf_counter() - model_stage_start
+        print(f"[TIME] {model_name} refit_full_train: {format_seconds(refit_elapsed)}")
+        print(f"[TIME] {model_name} test_evaluation + save: {format_seconds(test_eval_elapsed)}")
+        print(f"[TIME] {model_name} total test-stage time: {format_seconds(total_model_elapsed)}")
+        model_timings.append(
+            {
+                "model": model_name,
+                "phase": "final_refit_and_test",
+                "seconds": total_model_elapsed,
+                "refit_seconds": refit_elapsed,
+                "test_eval_seconds": test_eval_elapsed,
+            }
+        )
+
+    stage_start = time.perf_counter()
+    val_df = pd.DataFrame(val_rows).sort_values("val_f1_macro", ascending=False)
+    test_df = pd.DataFrame(test_rows).sort_values("test_f1_macro", ascending=False)
+
+    val_df.to_csv(run_dir / "internal_validation_comparison.csv", index=False)
+    test_df.to_csv(run_dir / "test_comparison.csv", index=False)
+    with (run_dir / "best_params.json").open("w", encoding="utf-8") as f:
+        json.dump(best_params, f, indent=2)
+    stage_elapsed = time.perf_counter() - stage_start
+    stage_timings.append({"stage": "save_final_artifacts", "seconds": stage_elapsed})
+    pd.DataFrame(stage_timings).to_csv(run_dir / "stage_timings.csv", index=False)
+    pd.DataFrame(model_timings).to_csv(run_dir / "model_timings.csv", index=False)
+    total_elapsed = time.perf_counter() - total_start
+    with (run_dir / "runtime_summary.json").open("w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "total_seconds": total_elapsed,
+                "total_formatted": format_seconds(total_elapsed),
+                "stage_timings": stage_timings,
+                "model_timings": model_timings,
+            },
+            f,
+            indent=2,
+        )
+    print(f"[TIME] save_final_artifacts: {format_seconds(stage_elapsed)}")
+
+    print("\n" + "=" * 70)
+    print("[DONE] Internal validation ranking:")
+    print(val_df)
+    print("\n[DONE] Test ranking:")
+    print(test_df)
+    print(f"[TIME] Total pipeline runtime: {format_seconds(total_elapsed)}")
+    print(f"\n[INFO] Artifacts saved in: {run_dir.resolve()}")
+
+
+if __name__ == "__main__":
+    main()

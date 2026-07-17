@@ -1,0 +1,32 @@
+# Python cache and virtual environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+env/
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# Local secrets and tokens
+client_secret.json
+token.json
+
+# Large model and archive artifacts
+*.pth
+*.zip
+
+# Generated experiment outputs
+comparison_results/
+filter_comparison_outputs/
+outputs_resnet18_thesis_dl_bbox/
+outputs_resnet18_thesis_dl_no_bbox/
+outputs_resnet18_thesis_partial_finetune/
+runtime_smoke/
+
+# Local project folders that should stay out of source control
+.agents/
+Brumaire_bird_classifier/
+yolov5/
