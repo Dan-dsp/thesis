@@ -21,6 +21,7 @@ The file runs the full feature-comparison procedure in stages:
 4. embedded methods
 5. final overlap comparison
 6. diagnostic plots for the final lists
+7. training-ready CSV export
 
 The goal is not just to score features once, but to compare several selection strategies and save separate final lists for each one.
 
@@ -116,6 +117,19 @@ At the end, the script checks selected lists again using:
 
 This helps you inspect whether final selected features still contain strong redundancy or visually weak class separation.
 
+### 7. Training-ready CSV export
+
+After the rankings and diagnostics are finished, the workflow now exports reduced CSV datasets that can be used directly by [sl_training_pipeline.py](f:/01_Univalle/01_TG/01_Python/sl_training_pipeline.py).
+
+Each exported CSV keeps:
+
+- `species`
+- `split`
+- sample metadata columns when they exist
+- only the selected feature columns for that method or feature family
+
+This means you no longer need to manually reconstruct a reduced dataset before training.
+
 ## Main Functions
 
 ## `compare_filter_method_rankings(...)`
@@ -152,6 +166,21 @@ Purpose:
 
 This is the final interpretability check after the numeric ranking stages.
 
+## `export_training_ready_feature_datasets(...)`
+
+Purpose:
+
+- convert ranked feature lists and selected subsets into full CSV datasets
+- preserve the metadata and split columns needed by the training pipeline
+- save one training-ready CSV per feature-selection output
+
+Examples of exported datasets include:
+
+- filter `anova` top-100
+- filter `consensus` top-50
+- wrapper `svm_rbf` selected subset
+- embedded `random_forest` top-100
+
 ## `run_feature_comparison_workflow(...)`
 
 Purpose:
@@ -160,6 +189,7 @@ Purpose:
 - create the output folder structure
 - call the tools module
 - save summaries and diagnostics
+- export training-ready datasets for later model training
 
 This is the main workflow entry point used by both:
 
@@ -176,8 +206,27 @@ The workflow now writes stage-oriented outputs under `sl_results`:
 - `embedded/`
 - `stage_comparison/`
 - `diagnostics/`
+- `training_ready_datasets/`
 
 This is easier to navigate than placing every method directly at the root level.
+
+Inside `training_ready_datasets/`, the workflow now writes:
+
+- family-specific folders such as `filters/`, `wrappers/`, and `embedded/`
+- one reduced CSV per exported feature set
+- `training_ready_dataset_manifest.csv`
+
+The manifest is especially important because [sl_training_pipeline.py](f:/01_Univalle/01_TG/01_Python/sl_training_pipeline.py) can now use it to run all exported datasets automatically in batch mode.
+
+## Recommended next step
+
+The intended workflow is now:
+
+1. run [sl_feature_comparison.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison.py)
+2. review the exported feature families if needed
+3. run [sl_training_pipeline.py](f:/01_Univalle/01_TG/01_Python/sl_training_pipeline.py) either:
+   - on one selected CSV
+   - or on the full manifest in batch mode
 
 ## Short Summary
 
@@ -189,4 +238,5 @@ It:
 - runs exploratory, filter, wrapper, and embedded stages
 - compares their outputs
 - saves the separate final lists
+- exports training-ready reduced CSV datasets
 - finishes with diagnostic correlation and violin plots

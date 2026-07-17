@@ -36,9 +36,19 @@ Important detail:
 
 So the stage is still launched from `sl_feature_comparison.py`, but its implementation is now split for readability.
 
+Important workflow update:
+
+- this stage now also exports training-ready reduced CSV datasets
+- it writes a manifest that can be consumed by the training pipeline batch mode
+
 ### Model training
 
 - [sl_training_pipeline.py](f:/01_Univalle/01_TG/01_Python/sl_training_pipeline.py)
+
+Important workflow update:
+
+- this stage can still train all classifiers on one chosen CSV
+- it can now also run all exported feature-set CSVs automatically in batch mode
 
 ## Structure
 
@@ -83,7 +93,25 @@ Use [sl_main.py](f:/01_Univalle/01_TG/01_Python/sl_main.py) when you want the fu
 - feature comparison / selection
 - model training
 
+The recommended order is now:
+
+1. run feature extraction if the main feature CSV does not exist yet
+2. run `sl_feature_comparison.py` to generate rankings and training-ready reduced CSVs
+3. run `sl_training_pipeline.py` either:
+   - on one selected CSV
+   - or in batch mode across the full exported manifest
+
 If you only need one stage, you can still run that stage file directly.
+
+Practical examples:
+
+- full comparison workflow:
+  - `python sl_feature_comparison.py`
+  - `python sl_training_pipeline.py --run-exported-batch`
+
+- one chosen feature family:
+  - `python sl_feature_comparison.py`
+  - `python sl_training_pipeline.py --data-csv "F:/01_Univalle/01_TG/sl_results/training_ready_datasets/filters/consensus/consensus_top_100_training.csv"`
 
 ## Short Summary
 
@@ -95,3 +123,5 @@ Its main update is conceptual:
 - it now launches the refactored multi-stage feature-comparison workflow split across
   - [sl_feature_comparison.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison.py)
   - [sl_feature_comparison_tools.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison_tools.py)
+- the feature-comparison stage now prepares reduced training datasets for the training stage
+- the training stage can now evaluate one selected feature set or all exported feature sets in batch mode
