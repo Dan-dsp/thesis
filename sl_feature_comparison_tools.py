@@ -37,6 +37,7 @@ from sklearn.svm import SVC
 
 
 METADATA_COLUMNS = {"sample_id", "sample_name", "orig_filename", "species", "split"}
+METADATA_COLUMN_ORDER = ("sample_id", "sample_name", "orig_filename", "species", "split")
 EXCLUDED_FEATURE_PREFIXES: tuple[str, ...] = ()
 DUPLICATE_DESCRIPTIVE_FEATURES = {"affine_6"}
 DUPLICATE_LEGACY_FEATURES = {"f39"}
@@ -88,6 +89,76 @@ def get_feature_columns(df: pd.DataFrame, label_col: str = "species") -> list[st
         if not any(col.startswith(prefix) for prefix in EXCLUDED_FEATURE_PREFIXES)
     ]
     return selected
+
+
+def get_metadata_columns(df: pd.DataFrame, label_col: str = "species") -> list[str]:
+    metadata_cols = [col for col in METADATA_COLUMN_ORDER if col in df.columns]
+    if label_col in df.columns and label_col not in metadata_cols:
+        metadata_cols.append(label_col)
+    return metadata_cols
+
+
+def build_training_ready_dataset(
+    df: pd.DataFrame,
+    selected_features: list[str],
+    label_col: str = "species",
+) -> pd.DataFrame:
+    """
+    Build a reduced dataset that stays compatible with `sl_training_pipeline.py`.
+    """
+    if label_col not in df.columns:
+        raise ValueError(f"Label column '{label_col}' not found in dataset.")
+    if "split" not in df.columns:
+        raise ValueError("The dataset must include a 'split' column for training export.")
+    if not selected_features:
+        raise ValueError("No selected features were provided for export.")
+
+    missing_features = [feature for feature in selected_features if feature not in df.columns]
+    if missing_features:
+        preview = ", ".join(missing_features[:10])
+        raise ValueError(
+            "Cannot export training-ready dataset because some selected features are missing: "
+            f"{preview}"
+        )
+
+    seen: set[str] = set()
+    ordered_features: list[str] = []
+    for feature in selected_features:
+        if feature in seen:
+            continue
+        seen.add(feature)
+        ordered_features.append(feature)
+
+    metadata_cols = get_metadata_columns(df, label_col=label_col)
+    export_cols = metadata_cols + ordered_features
+    export_df = df.loc[:, export_cols].copy()
+
+    for feature in ordered_features:
+        export_df[feature] = pd.to_numeric(export_df[feature], errors="coerce")
+
+    return export_df
+
+
+def export_training_ready_dataset(
+    df: pd.DataFrame,
+    selected_features: list[str],
+    out_path: str | Path,
+    label_col: str = "species",
+) -> dict[str, Any]:
+    export_df = build_training_ready_dataset(df, selected_features, label_col=label_col)
+    output_path = Path(out_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    export_df.to_csv(output_path, index=False)
+
+    feature_cols = get_feature_columns(export_df, label_col=label_col)
+    metadata_cols = get_metadata_columns(export_df, label_col=label_col)
+    return {
+        "csv_path": str(output_path),
+        "n_rows": int(export_df.shape[0]),
+        "n_features": int(len(feature_cols)),
+        "feature_columns": feature_cols,
+        "metadata_columns": metadata_cols,
+    }
 
 
 def load_features_and_labels(

@@ -18,6 +18,7 @@ Workflow:
 
 from __future__ import annotations
 
+import argparse
 import json
 import time
 from contextlib import contextmanager
@@ -54,6 +55,13 @@ try:
 except ImportError:
     tqdm = None
 
+
+DEFAULT_DATA_CSV_PATH = r"F:/01_Univalle/01_TG/dataset_features/shallow_learning_birds.csv"
+DEFAULT_OUT_DIR = Path(r"F:/01_Univalle/01_TG/sl_outputs")
+DEFAULT_TRAINING_READY_MANIFEST_PATH = Path(
+    r"F:/01_Univalle/01_TG/sl_results/training_ready_datasets/training_ready_dataset_manifest.csv"
+)
+DEFAULT_BATCH_OUT_DIR = Path(r"F:/01_Univalle/01_TG/sl_outputs_batch")
 
 METADATA_COLUMNS = {"sample_id", "sample_name", "orig_filename", "species", "split"}
 DUPLICATE_DESCRIPTIVE_FEATURES = {"affine_6"}
@@ -193,6 +201,74 @@ def prepare_run_output_dirs(output_root: Path) -> dict[str, Path]:
         "cm_dir": cm_dir,
         "metadata_dir": metadata_dir,
     }
+
+
+def load_training_ready_manifest(manifest_csv_path: str | Path) -> pd.DataFrame:
+    manifest_path = Path(manifest_csv_path)
+    if not manifest_path.exists():
+        raise FileNotFoundError(
+            f"Training-ready manifest not found: {manifest_path}"
+        )
+
+    manifest_df = pd.read_csv(manifest_path)
+    required_columns = {"family", "method_name", "variant", "csv_path"}
+    missing_columns = required_columns - set(manifest_df.columns)
+    if missing_columns:
+        missing_text = ", ".join(sorted(missing_columns))
+        raise ValueError(
+            f"Manifest is missing required columns: {missing_text}"
+        )
+    if manifest_df.empty:
+        raise ValueError(f"Manifest has no dataset rows: {manifest_path}")
+
+    return manifest_df
+
+
+def collect_batch_training_datasets(
+    manifest_csv_path: str | Path,
+) -> list[dict[str, Any]]:
+    manifest_df = load_training_ready_manifest(manifest_csv_path)
+    datasets: list[dict[str, Any]] = []
+
+    def optional_int(row: dict[str, Any], key: str) -> int | None:
+        value = row.get(key)
+        if value is None or pd.isna(value):
+            return None
+        return int(value)
+
+    for row in manifest_df.to_dict(orient="records"):
+        csv_path = Path(str(row["csv_path"]))
+        if not csv_path.exists():
+            raise FileNotFoundError(
+                f"Exported training CSV listed in manifest does not exist: {csv_path}"
+            )
+
+        datasets.append({
+            "family": str(row["family"]),
+            "method_name": str(row["method_name"]),
+            "variant": str(row["variant"]),
+            "csv_path": str(csv_path),
+            "n_features": optional_int(row, "n_features"),
+            "n_rows": optional_int(row, "n_rows"),
+        })
+
+    return datasets
+
+
+def annotate_comparison_table(
+    comparison_df: pd.DataFrame,
+    dataset_info: dict[str, Any],
+    run_dir: Path,
+) -> pd.DataFrame:
+    annotated_df = comparison_df.copy()
+    annotated_df.insert(0, "dataset_variant", dataset_info["variant"])
+    annotated_df.insert(0, "dataset_method_name", dataset_info["method_name"])
+    annotated_df.insert(0, "dataset_family", dataset_info["family"])
+    annotated_df.insert(3, "dataset_csv_path", dataset_info["csv_path"])
+    annotated_df.insert(4, "dataset_n_features", dataset_info["n_features"])
+    annotated_df.insert(5, "dataset_n_rows", dataset_info["n_rows"])
+    annotated_df.insert(6, "run_dir", str(run_dir))
+    return annotated_df
 
 
 def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42) -> Dict[str, Any]:
@@ -495,29 +571,29 @@ def save_confusion_matrix(cm: np.ndarray, labels: np.ndarray, out_path: Path, ti
     plt.close(fig)
 
 
-def main() -> None:
-    # Update these paths to match your machine
-    DATA_CSV_PATH = r"F:/01_Univalle/01_TG/dataset_features/shallow_learning_birds.csv"
-    OUT_DIR = Path(r"F:/01_Univalle/01_TG/sl_outputs")
-
-    SEED = 42
-    CV_FOLDS = 5
-    SCORING = "f1_macro"
-    VAL_FRACTION = 0.2
-    GRIDSEARCH_N_JOBS = -1
-    GRIDSEARCH_PRE_DISPATCH = "2*n_jobs"
-    GRIDSEARCH_VERBOSE = 0
-    TREE_MODEL_N_JOBS = 1
-    XGB_N_JOBS = 1
-
+def run_training_pipeline(
+    data_csv_path: str | Path = DEFAULT_DATA_CSV_PATH,
+    out_dir: str | Path = DEFAULT_OUT_DIR,
+    seed: int = 42,
+    cv_folds: int = 5,
+    scoring: str = "f1_macro",
+    val_fraction: float = 0.2,
+    gridsearch_n_jobs: int = -1,
+    gridsearch_pre_dispatch: str = "2*n_jobs",
+    gridsearch_verbose: int = 0,
+    tree_model_n_jobs: int = 1,
+    xgb_n_jobs: int = 1,
+) -> Path:
+    data_csv_path = str(data_csv_path)
+    out_dir = Path(out_dir)
     total_start = time.perf_counter()
     stage_timings = []
     model_timings = []
 
-    set_seed(SEED)
+    set_seed(seed)
 
     stage_start = time.perf_counter()
-    paths = prepare_run_output_dirs(OUT_DIR)
+    paths = prepare_run_output_dirs(out_dir)
     run_dir = paths["run_dir"]
     models_dir = paths["models_dir"]
     reports_dir = paths["reports_dir"]
@@ -528,7 +604,7 @@ def main() -> None:
     print(f"[TIME] prepare_run_output_dirs: {format_seconds(stage_elapsed)}")
 
     stage_start = time.perf_counter()
-    data = load_split_dataset(DATA_CSV_PATH, val_fraction=VAL_FRACTION, seed=SEED)
+    data = load_split_dataset(data_csv_path, val_fraction=val_fraction, seed=seed)
     stage_elapsed = time.perf_counter() - stage_start
     stage_timings.append({"stage": "load_split_dataset", "seconds": stage_elapsed})
     print(f"[TIME] load_split_dataset: {format_seconds(stage_elapsed)}")
@@ -569,15 +645,15 @@ def main() -> None:
     with (metadata_dir / "run_config.json").open("w", encoding="utf-8") as f:
         json.dump(
             {
-                "data_csv_path": DATA_CSV_PATH,
-                "seed": SEED,
-                "cv_folds": CV_FOLDS,
-                "scoring": SCORING,
-                "internal_val_fraction": VAL_FRACTION,
-                "gridsearch_n_jobs": GRIDSEARCH_N_JOBS,
-                "gridsearch_pre_dispatch": GRIDSEARCH_PRE_DISPATCH,
-                "tree_model_n_jobs": TREE_MODEL_N_JOBS,
-                "xgb_n_jobs": XGB_N_JOBS,
+                "data_csv_path": data_csv_path,
+                "seed": seed,
+                "cv_folds": cv_folds,
+                "scoring": scoring,
+                "internal_val_fraction": val_fraction,
+                "gridsearch_n_jobs": gridsearch_n_jobs,
+                "gridsearch_pre_dispatch": gridsearch_pre_dispatch,
+                "tree_model_n_jobs": tree_model_n_jobs,
+                "xgb_n_jobs": xgb_n_jobs,
             },
             f,
             indent=2,
@@ -599,11 +675,11 @@ def main() -> None:
     print(f"[TIME] save_initial_metadata: {format_seconds(stage_elapsed)}")
 
     stage_start = time.perf_counter()
-    cv = StratifiedKFold(n_splits=CV_FOLDS, shuffle=True, random_state=SEED)
+    cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=seed)
     spaces = make_model_spaces(
-        seed=SEED,
-        tree_model_n_jobs=TREE_MODEL_N_JOBS,
-        xgb_n_jobs=XGB_N_JOBS,
+        seed=seed,
+        tree_model_n_jobs=tree_model_n_jobs,
+        xgb_n_jobs=xgb_n_jobs,
     )
     stage_elapsed = time.perf_counter() - stage_start
     stage_timings.append({"stage": "build_model_spaces", "seconds": stage_elapsed})
@@ -622,20 +698,20 @@ def main() -> None:
         print(f"[INFO] Tuning model: {model_name}")
         model_stage_start = time.perf_counter()
         n_candidates = len(list(ParameterGrid(grid)))
-        total_cv_fits = n_candidates * CV_FOLDS
+        total_cv_fits = n_candidates * cv_folds
         print(f"[INFO] Grid candidates:    {n_candidates}")
         print(f"[INFO] Expected CV fits:  {total_cv_fits}")
 
         gs = GridSearchCV(
             estimator=pipe,
             param_grid=grid,
-            scoring=SCORING,
+            scoring=scoring,
             cv=cv,
-            n_jobs=GRIDSEARCH_N_JOBS,
-            pre_dispatch=GRIDSEARCH_PRE_DISPATCH,
+            n_jobs=gridsearch_n_jobs,
+            pre_dispatch=gridsearch_pre_dispatch,
             refit=True,
             error_score="raise",
-            verbose=GRIDSEARCH_VERBOSE,
+            verbose=gridsearch_verbose,
         )
         with tqdm_joblib(total=total_cv_fits, desc=f"{model_name} CV") as progress_bar:
             gs.fit(X_train, y_train)
@@ -648,7 +724,7 @@ def main() -> None:
         best_params[model_name] = gs.best_params_
 
         print(f"[INFO] Best {model_name} params: {gs.best_params_}")
-        print(f"[INFO] Best {model_name} CV {SCORING}: {gs.best_score_:.4f}")
+        print(f"[INFO] Best {model_name} CV {scoring}: {gs.best_score_:.4f}")
         print(f"[TIME] {model_name} tuning: {format_seconds(tuning_elapsed)}")
 
         eval_stage_start = time.perf_counter()
@@ -778,7 +854,195 @@ def main() -> None:
     print(test_df)
     print(f"[TIME] Total pipeline runtime: {format_seconds(total_elapsed)}")
     print(f"\n[INFO] Artifacts saved in: {run_dir.resolve()}")
+    return run_dir
+
+
+def run_training_pipeline_batch(
+    manifest_csv_path: str | Path = DEFAULT_TRAINING_READY_MANIFEST_PATH,
+    batch_out_dir: str | Path = DEFAULT_BATCH_OUT_DIR,
+    seed: int = 42,
+    cv_folds: int = 5,
+    scoring: str = "f1_macro",
+    val_fraction: float = 0.2,
+    gridsearch_n_jobs: int = -1,
+    gridsearch_pre_dispatch: str = "2*n_jobs",
+    gridsearch_verbose: int = 0,
+    tree_model_n_jobs: int = 1,
+    xgb_n_jobs: int = 1,
+) -> Path:
+    datasets = collect_batch_training_datasets(manifest_csv_path)
+
+    batch_root = Path(batch_out_dir)
+    batch_root.mkdir(parents=True, exist_ok=True)
+    batch_run_dir = batch_root / datetime.now().strftime("batch_%Y%m%d_%H%M%S")
+    batch_run_dir.mkdir(parents=True, exist_ok=False)
+    (batch_root / "latest_batch_run.txt").write_text(str(batch_run_dir), encoding="utf-8")
+
+    per_dataset_root = batch_run_dir / "per_dataset"
+    per_dataset_root.mkdir(parents=True, exist_ok=True)
+
+    print("[BATCH] Starting batch shallow-learning training.")
+    print(f"[BATCH] Manifest: {Path(manifest_csv_path)}")
+    print(f"[BATCH] Datasets to run: {len(datasets)}")
+
+    batch_start = time.perf_counter()
+    batch_rows: list[dict[str, Any]] = []
+    validation_tables: list[pd.DataFrame] = []
+    test_tables: list[pd.DataFrame] = []
+
+    for idx, dataset_info in enumerate(datasets, start=1):
+        dataset_label = (
+            f"{dataset_info['family']}/{dataset_info['method_name']}/{dataset_info['variant']}"
+        )
+        print("\n" + "#" * 80)
+        print(f"[BATCH] Dataset {idx}/{len(datasets)}: {dataset_label}")
+        print(f"[BATCH] CSV path: {dataset_info['csv_path']}")
+
+        dataset_out_dir = (
+            per_dataset_root
+            / dataset_info["family"]
+            / dataset_info["method_name"]
+            / dataset_info["variant"]
+        )
+
+        dataset_start = time.perf_counter()
+        run_dir = run_training_pipeline(
+            data_csv_path=dataset_info["csv_path"],
+            out_dir=dataset_out_dir,
+            seed=seed,
+            cv_folds=cv_folds,
+            scoring=scoring,
+            val_fraction=val_fraction,
+            gridsearch_n_jobs=gridsearch_n_jobs,
+            gridsearch_pre_dispatch=gridsearch_pre_dispatch,
+            gridsearch_verbose=gridsearch_verbose,
+            tree_model_n_jobs=tree_model_n_jobs,
+            xgb_n_jobs=xgb_n_jobs,
+        )
+        dataset_elapsed = time.perf_counter() - dataset_start
+
+        val_df = pd.read_csv(run_dir / "internal_validation_comparison.csv")
+        test_df = pd.read_csv(run_dir / "test_comparison.csv")
+        validation_tables.append(annotate_comparison_table(val_df, dataset_info, run_dir))
+        test_tables.append(annotate_comparison_table(test_df, dataset_info, run_dir))
+
+        top_val_row = val_df.iloc[0].to_dict()
+        top_test_row = test_df.iloc[0].to_dict()
+        batch_rows.append({
+            "family": dataset_info["family"],
+            "method_name": dataset_info["method_name"],
+            "variant": dataset_info["variant"],
+            "csv_path": dataset_info["csv_path"],
+            "n_features": dataset_info["n_features"],
+            "n_rows": dataset_info["n_rows"],
+            "run_dir": str(run_dir),
+            "runtime_seconds": dataset_elapsed,
+            "best_val_model": top_val_row["model"],
+            "best_val_f1_macro": top_val_row["val_f1_macro"],
+            "best_test_model": top_test_row["model"],
+            "best_test_f1_macro": top_test_row["test_f1_macro"],
+        })
+
+    batch_manifest_df = pd.DataFrame(batch_rows).sort_values(
+        ["family", "method_name", "variant"],
+        ignore_index=True,
+    )
+    batch_manifest_df.to_csv(batch_run_dir / "batch_run_manifest.csv", index=False)
+
+    if validation_tables:
+        validation_all_df = pd.concat(validation_tables, ignore_index=True)
+        validation_all_df.to_csv(
+            batch_run_dir / "batch_internal_validation_comparison.csv",
+            index=False,
+        )
+    else:
+        validation_all_df = pd.DataFrame()
+
+    if test_tables:
+        test_all_df = pd.concat(test_tables, ignore_index=True)
+        test_all_df.to_csv(batch_run_dir / "batch_test_comparison.csv", index=False)
+    else:
+        test_all_df = pd.DataFrame()
+
+    batch_elapsed = time.perf_counter() - batch_start
+    summary = {
+        "manifest_csv_path": str(Path(manifest_csv_path)),
+        "batch_run_dir": str(batch_run_dir),
+        "dataset_count": int(len(datasets)),
+        "model_evaluation_rows_validation": int(len(validation_all_df)),
+        "model_evaluation_rows_test": int(len(test_all_df)),
+        "total_seconds": float(batch_elapsed),
+        "total_formatted": format_seconds(batch_elapsed),
+    }
+    with (batch_run_dir / "batch_runtime_summary.json").open("w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2)
+
+    print("\n" + "#" * 80)
+    print("[BATCH] Completed batch shallow-learning training.")
+    print(f"[BATCH] Batch run directory: {batch_run_dir}")
+    print(f"[BATCH] Total runtime: {format_seconds(batch_elapsed)}")
+    return batch_run_dir
+
+
+def main(
+    data_csv_path: str | Path = DEFAULT_DATA_CSV_PATH,
+    out_dir: str | Path = DEFAULT_OUT_DIR,
+    batch_manifest_csv_path: str | Path | None = None,
+    batch_out_dir: str | Path = DEFAULT_BATCH_OUT_DIR,
+) -> None:
+    if batch_manifest_csv_path is not None:
+        run_training_pipeline_batch(
+            manifest_csv_path=batch_manifest_csv_path,
+            batch_out_dir=batch_out_dir,
+        )
+        return
+
+    run_training_pipeline(data_csv_path=data_csv_path, out_dir=out_dir)
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(
+        description="Train shallow-learning models on a selected feature CSV."
+    )
+    parser.add_argument(
+        "--data-csv",
+        default=DEFAULT_DATA_CSV_PATH,
+        help="Path to the feature CSV that includes species, split, and selected feature columns.",
+    )
+    parser.add_argument(
+        "--out-dir",
+        default=str(DEFAULT_OUT_DIR),
+        help="Directory where training artifacts will be saved.",
+    )
+    parser.add_argument(
+        "--batch-manifest-csv",
+        default=None,
+        help=(
+            "Path to training_ready_dataset_manifest.csv. "
+            "When provided, the script runs all exported feature-set CSVs in batch mode."
+        ),
+    )
+    parser.add_argument(
+        "--run-exported-batch",
+        action="store_true",
+        help=(
+            "Run all exported feature-set CSVs listed in the default training-ready manifest at "
+            f"{DEFAULT_TRAINING_READY_MANIFEST_PATH}."
+        ),
+    )
+    parser.add_argument(
+        "--batch-out-dir",
+        default=str(DEFAULT_BATCH_OUT_DIR),
+        help="Root directory where batch-mode training outputs will be saved.",
+    )
+    args = parser.parse_args()
+    batch_manifest_csv_path = args.batch_manifest_csv
+    if args.run_exported_batch and batch_manifest_csv_path is None:
+        batch_manifest_csv_path = DEFAULT_TRAINING_READY_MANIFEST_PATH
+
+    main(
+        data_csv_path=args.data_csv,
+        out_dir=args.out_dir,
+        batch_manifest_csv_path=batch_manifest_csv_path,
+        batch_out_dir=args.batch_out_dir,
+    )

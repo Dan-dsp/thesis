@@ -30,6 +30,7 @@ from sl_feature_comparison_tools import (
     compute_mutual_information,
     encode_labels,
     ensure_dir,
+    export_training_ready_dataset,
     load_features_and_labels,
     plot_correlation_matrix,
     plot_violin_for_features,
@@ -246,6 +247,97 @@ def run_final_selection_diagnostics(
         )
 
 
+def export_training_ready_feature_datasets(
+    df: pd.DataFrame,
+    label_col: str,
+    filter_comparison: dict[str, Any],
+    wrapper_results: dict[str, dict[str, Any]],
+    embedded_results: dict[str, dict[str, Any]],
+    save_dir: str | Path,
+) -> pd.DataFrame:
+    export_root = ensure_dir(save_dir)
+    manifest_rows: list[dict[str, Any]] = []
+
+    def extract_features(feature_df: pd.DataFrame) -> list[str]:
+        if "feature" not in feature_df.columns:
+            raise ValueError("Expected a 'feature' column when exporting ranked feature datasets.")
+        return feature_df["feature"].dropna().astype(str).tolist()
+
+    def export_feature_list(
+        family: str,
+        method_name: str,
+        variant: str,
+        selected_features: list[str],
+    ) -> None:
+        if not selected_features:
+            return
+
+        output_path = export_root / family / method_name / f"{method_name}_{variant}_training.csv"
+        export_info = export_training_ready_dataset(
+            df,
+            selected_features,
+            output_path,
+            label_col=label_col,
+        )
+        manifest_rows.append({
+            "family": family,
+            "method_name": method_name,
+            "variant": variant,
+            "n_features": export_info["n_features"],
+            "n_rows": export_info["n_rows"],
+            "csv_path": export_info["csv_path"],
+        })
+
+    for method_name, slices in filter_comparison["method_top_slices"].items():
+        for top_k, feature_df in sorted(slices.items(), reverse=True):
+            export_feature_list(
+                "filters",
+                method_name,
+                f"top_{top_k}",
+                extract_features(feature_df),
+            )
+
+    for top_k, feature_df in sorted(filter_comparison["consensus_slices"].items(), reverse=True):
+        export_feature_list(
+            "filters",
+            "consensus",
+            f"top_{top_k}",
+            extract_features(feature_df),
+        )
+
+    for model_name, result in wrapper_results.items():
+        export_feature_list(
+            "wrappers",
+            model_name,
+            "selected",
+            list(result["selected_features"]),
+        )
+
+        for top_k, feature_df in sorted(result["top_feature_slices"].items(), reverse=True):
+            export_feature_list(
+                "wrappers",
+                model_name,
+                f"top_{top_k}",
+                extract_features(feature_df),
+            )
+
+    for model_name, result in embedded_results.items():
+        for top_k, feature_df in sorted(result["top_feature_slices"].items(), reverse=True):
+            export_feature_list(
+                "embedded",
+                model_name,
+                f"top_{top_k}",
+                extract_features(feature_df),
+            )
+
+    manifest_df = pd.DataFrame(manifest_rows).sort_values(
+        ["family", "method_name", "variant"],
+        ignore_index=True,
+    )
+    manifest_df.to_csv(export_root / "training_ready_dataset_manifest.csv", index=False)
+    return manifest_df
+
+
 def run_feature_comparison_workflow(
     csv_path: str,
     save_dir: str,
@@ -259,6 +351,7 @@ def run_feature_comparison_workflow(
         "embedded": save_path / "embedded",
         "stage_comparison": save_path / "stage_comparison",
         "diagnostics": save_path / "diagnostics",
+        "training_ready_datasets": save_path / "training_ready_datasets",
     }
     for path in output_dirs.values():
         ensure_dir(path)
@@ -273,7 +366,7 @@ def run_feature_comparison_workflow(
         xgb_n_jobs=XGB_N_JOBS,
     )
 
-    task_total = 2 + len(wrapper_spaces) + len(embedded_spaces) + 2
+    task_total = 2 + len(wrapper_spaces) + len(embedded_spaces) + 3
     progress = tqdm(total=task_total, desc="Feature comparison workflow", unit="stage")
 
     shapiro_df = run_shapiro_tests(
@@ -434,6 +527,21 @@ def run_feature_comparison_workflow(
     print("[Diagnostics] Saved final correlation matrices and violin plots.")
     progress.update(1)
 
+    exported_training_datasets_df = export_training_ready_feature_datasets(
+        df,
+        label_col,
+        filter_comparison,
+        wrapper_results,
+        embedded_results,
+        save_dir=output_dirs["training_ready_datasets"],
+    )
+    print(
+        "[Training CSVs] Saved "
+        f"{len(exported_training_datasets_df)} training-ready datasets in "
+        f"{output_dirs['training_ready_datasets']}"
+    )
+    progress.update(1)
+
     workflow_summary = {
         "csv_path": csv_path,
         "label_col": label_col,
@@ -450,6 +558,7 @@ def run_feature_comparison_workflow(
         workflow_summary["xgboost_top_100_count"] = int(
             len(embedded_results["xgboost"]["top_feature_slices"][DEFAULT_TOP_K])
         )
+    workflow_summary["training_ready_dataset_count"] = int(len(exported_training_datasets_df))
     save_json(workflow_summary, save_path / "feature_comparison_summary.json")
 
     progress.close()
