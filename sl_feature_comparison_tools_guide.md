@@ -164,17 +164,67 @@ Runs the wrapper stage for one model.
 Behavior:
 
 - starts from the full feature space
-- performs RFECV
-- uses GridSearch inside the evaluation
+- runs an **initial GridSearchCV once on the full feature space**
+- runs RFECV on the **already tuned estimator**
+- runs a **final GridSearchCV once more on the selected subset**
 - refits using `f1_macro`
 - also records `accuracy` and `MCC`
+
+This is an important practical design choice.
+
+The older idea of doing a fresh GridSearch inside every RFECV elimination step is theoretically possible, but it becomes extremely expensive. The current implementation keeps the wrapper spirit while making the runtime manageable:
+
+1. tune once on all features
+2. eliminate features with RFECV using that tuned model
+3. retune once on the reduced subset
+
+So when the wrapper stage says:
+
+- `Initial tuning on the full feature space...`
+
+that means it is searching for the best hyperparameters before feature elimination begins.
+
+### Progress bars inside wrapper selection
+
+The wrapper stage now includes tqdm counters for the three expensive sub-processes:
+
+- `Initial grid`
+- `RFECV`
+- `Final grid`
+
+These counters track **model fits**, not features.
+
+Example:
+
+- if the SVM grid has `4` values for `C`
+- and `4` values for `gamma`
+- and cross-validation uses `5` folds
+
+then the initial grid search performs:
+
+- `4 * 4 = 16` hyperparameter combinations
+- `16 * 5 = 80` fitted models
+
+So a bar like:
+
+- `42/80`
+
+means:
+
+- 42 model fits completed out of 80 total grid-search fits
+
+It does **not** mean 42 of 80 features.
+
+That distinction is very important when reading the wrapper progress in the terminal.
 
 Saved outputs include:
 
 - RFECV ranking
 - selected feature list
 - RFECV curve
+- initial full-space grid-search results
 - full grid-search results
+- initial best-summary JSON
 - best-summary JSON
 - derived top-100 / top-80 / top-50 ranked lists
 

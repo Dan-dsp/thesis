@@ -51,6 +51,7 @@ REFIT_METRIC = "f1_macro"
 MAJORITY_THRESHOLD = 3
 GRIDSEARCH_N_JOBS = -1
 RFECV_N_JOBS = 1
+WRAPPER_RFECV_STEP = 10
 TREE_MODEL_N_JOBS = 1
 XGB_N_JOBS = 1
 
@@ -439,6 +440,7 @@ def run_feature_comparison_workflow(
 
     wrapper_results: dict[str, dict[str, Any]] = {}
     for model_name, (pipeline, param_grid) in wrapper_spaces.items():
+        print(f"\n[Wrapper:{model_name}] Starting wrapper selection.")
         wrapper_result = run_wrapper_rfecv(
             X,
             y_encoded,
@@ -450,6 +452,7 @@ def run_feature_comparison_workflow(
             refit_metric=REFIT_METRIC,
             cv_splits=CV_FOLDS,
             min_features_to_select=5,
+            rfecv_step=WRAPPER_RFECV_STEP,
             grid_n_jobs=GRIDSEARCH_N_JOBS,
             rfecv_n_jobs=RFECV_N_JOBS,
             seed=SEED,

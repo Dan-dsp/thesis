@@ -40,6 +40,7 @@ Important workflow update:
 
 - this stage now also exports training-ready reduced CSV datasets
 - it writes a manifest that can be consumed by the training pipeline batch mode
+- its wrapper sub-stage now shows tqdm counters for initial tuning, RFECV, and final tuning
 
 ### Model training
 
@@ -102,6 +103,24 @@ The recommended order is now:
    - or in batch mode across the full exported manifest
 
 If you only need one stage, you can still run that stage file directly.
+
+Important runtime note for the feature-comparison stage:
+
+- wrapper tqdm counters represent **model fits**
+- they do not represent feature counts
+
+Example:
+
+- if the SVM wrapper grid contains `16` hyperparameter combinations
+- and CV uses `5` folds
+
+then the initial wrapper grid performs:
+
+- `16 * 5 = 80` model fits
+
+So a progress readout like `42/80` means:
+
+- 42 fitted models completed out of 80 total fits
 
 Practical examples:
 

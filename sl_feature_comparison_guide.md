@@ -68,16 +68,63 @@ The orchestrator then runs RFECV-based wrapper selection for:
 These wrapper runs use:
 
 - the **full feature space**
-- GridSearch inside the evaluation
+- one initial hyperparameter tuning pass on the full feature space
+- RFECV on the tuned estimator
+- one final hyperparameter tuning pass on the selected subset
 - `f1_macro` as the main refit metric
 - `accuracy` and `MCC` also recorded in the grid-search outputs
+
+This point matters a lot for runtime interpretation.
+
+The wrapper stage does **not** re-run a full GridSearch at every RFECV elimination step anymore. That older design was making the process look frozen because it required a very large number of model fits.
+
+The current wrapper logic is:
+
+1. tune once on all features
+2. run RFECV with that tuned model
+3. retune once on the reduced subset
+
+This keeps the method model-based, but makes it far more practical.
 
 Each wrapper model saves:
 
 - the RFECV ranking
 - the selected feature list
+- initial full-space grid-search results
 - grid-search results
+- initial best-parameter summary
 - best-parameter summary
+
+### Wrapper progress bars
+
+Inside the wrapper stage, tqdm progress bars now appear for:
+
+- `Initial grid`
+- `RFECV`
+- `Final grid`
+
+These bars count **fitted models**, not selected features.
+
+For example, if the SVM grid uses:
+
+- `4` values for `C`
+- `4` values for `gamma`
+- `5` CV folds
+
+then the initial grid performs:
+
+- `4 * 4 = 16` hyperparameter combinations
+- `16 * 5 = 80` fitted models
+
+So when the terminal shows something like:
+
+- `42/80`
+
+it means:
+
+- 42 fitted models out of 80 total grid-search fits have completed
+
+It does **not** mean 42 of 80 features.
 
 ### 4. Embedded stage
 
@@ -240,3 +287,11 @@ It:
 - saves the separate final lists
 - exports training-ready reduced CSV datasets
 - finishes with diagnostic correlation and violin plots
+
+In particular, the wrapper stage should now be read as:
+
+- initial grid tuning
+- RFECV elimination
+- final grid tuning
+
+and the visible tqdm counters in that stage represent **model fits**, not feature counts.

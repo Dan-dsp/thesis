@@ -13,12 +13,14 @@ This module contains the lower-level building blocks used by
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
+from joblib import parallel
 from scipy.stats import shapiro
 from tqdm import tqdm
 
@@ -29,7 +31,7 @@ from sklearn.feature_selection import RFECV, f_classif, mutual_info_classif
 from sklearn.impute import SimpleImputer
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import f1_score, make_scorer, matthews_corrcoef
-from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.model_selection import GridSearchCV, ParameterGrid, StratifiedKFold
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import LabelEncoder, StandardScaler
@@ -43,12 +45,57 @@ DUPLICATE_DESCRIPTIVE_FEATURES = {"affine_6"}
 DUPLICATE_LEGACY_FEATURES = {"f39"}
 DEFAULT_TOP_K = 100
 DERIVED_TOP_COUNTS = (80, 50)
+_ACTIVE_WRAPPER_FIT_PROGRESS = None
 
 
 def _import_pyplot():
     import matplotlib.pyplot as plt
 
     return plt
+
+
+@contextmanager
+def tqdm_joblib(total: int, desc: str):
+    """
+    Show a tqdm progress bar for joblib-driven tasks such as GridSearchCV.
+    """
+    progress_bar = tqdm(total=total, desc=desc, unit="fit", dynamic_ncols=True)
+    original_callback = parallel.BatchCompletionCallBack
+
+    class TqdmBatchCompletionCallback(original_callback):
+        def __call__(self, *args, **kwargs):
+            progress_bar.update(self.batch_size)
+            return super().__call__(*args, **kwargs)
+
+    parallel.BatchCompletionCallBack = TqdmBatchCompletionCallback
+    try:
+        yield progress_bar
+    finally:
+        parallel.BatchCompletionCallBack = original_callback
+        progress_bar.close()
+
+
+@contextmanager
+def wrapper_fit_progress(total: int, desc: str):
+    """
+    Track RFECV estimator fits, which happen outside joblib progress hooks.
+    """
+    global _ACTIVE_WRAPPER_FIT_PROGRESS
+
+    progress_bar = tqdm(total=total, desc=desc, unit="fit", dynamic_ncols=True)
+    _ACTIVE_WRAPPER_FIT_PROGRESS = progress_bar
+    try:
+        yield progress_bar
+    finally:
+        _ACTIVE_WRAPPER_FIT_PROGRESS = None
+        progress_bar.close()
+
+
+def _update_wrapper_fit_progress(step: int = 1) -> None:
+    global _ACTIVE_WRAPPER_FIT_PROGRESS
+
+    if _ACTIVE_WRAPPER_FIT_PROGRESS is not None:
+        _ACTIVE_WRAPPER_FIT_PROGRESS.update(step)
 
 
 def ensure_dir(save_dir: str | Path) -> Path:
@@ -719,6 +766,7 @@ class PermutationImportanceWrapper(BaseEstimator, ClassifierMixin):
             n_jobs=self.n_jobs,
         )
         self.feature_importances_ = np.nan_to_num(perm.importances_mean, nan=0.0)
+        _update_wrapper_fit_progress(1)
         return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:
@@ -769,40 +817,71 @@ def run_wrapper_rfecv(
     refit_metric: str = "f1_macro",
     cv_splits: int = 5,
     min_features_to_select: int = 5,
+    rfecv_step: int = 10,
     grid_n_jobs: int = -1,
     rfecv_n_jobs: int = 1,
     seed: int = 42,
 ) -> dict[str, Any]:
     scoring = build_scoring_dict()
-    inner_cv = StratifiedKFold(n_splits=cv_splits, shuffle=True, random_state=seed)
-    outer_cv = StratifiedKFold(n_splits=cv_splits, shuffle=True, random_state=seed)
+    tuning_cv = StratifiedKFold(n_splits=cv_splits, shuffle=True, random_state=seed)
+    rfecv_cv = StratifiedKFold(n_splits=cv_splits, shuffle=True, random_state=seed)
 
-    tuned_estimator = GridSearchCV(
+    initial_grid = GridSearchCV(
         estimator=clone(pipeline),
         param_grid=param_grid,
         scoring=scoring,
         refit=refit_metric,
-        cv=inner_cv,
+        cv=tuning_cv,
         n_jobs=grid_n_jobs,
         return_train_score=False,
     )
+
+    n_features = int(X.shape[1])
+    n_candidates = len(ParameterGrid(param_grid))
+    rfecv_step = max(1, int(rfecv_step))
+    estimated_elimination_rounds = 1 + max(0, int(np.ceil((n_features - min_features_to_select) / rfecv_step)))
+    estimated_total_model_fits = (
+        (n_candidates * cv_splits)
+        + (estimated_elimination_rounds * cv_splits)
+        + (n_candidates * cv_splits)
+    )
+    grid_fit_total = n_candidates * cv_splits
+    rfecv_fit_total = estimated_elimination_rounds * cv_splits
+    print(
+        f"[Wrapper:{model_name}] Wrapper selection starting with {n_features} features, "
+        f"step={rfecv_step}, {n_candidates} grid candidates, {cv_splits}-fold CV. "
+        f"Estimated total model fits: ~{estimated_total_model_fits}."
+    )
+    print(f"[Wrapper:{model_name}] Initial tuning on the full feature space...")
+    with tqdm_joblib(
+        total=grid_fit_total,
+        desc=f"[Wrapper:{model_name}] Initial grid",
+    ):
+        initial_grid.fit(X, y)
+    print(f"[Wrapper:{model_name}] Initial tuning completed.")
+
     rfecv_estimator = PermutationImportanceWrapper(
-        estimator=tuned_estimator,
+        estimator=clone(initial_grid.best_estimator_),
         scoring=refit_metric,
-        n_repeats=5,
+        n_repeats=3,
         random_state=seed,
         n_jobs=1,
     )
 
     rfecv = RFECV(
         estimator=rfecv_estimator,
-        step=1,
-        cv=outer_cv,
+        step=rfecv_step,
+        cv=rfecv_cv,
         scoring=refit_metric,
         min_features_to_select=min_features_to_select,
         n_jobs=rfecv_n_jobs,
     )
-    rfecv.fit(X, y)
+    with wrapper_fit_progress(
+        total=rfecv_fit_total,
+        desc=f"[Wrapper:{model_name}] RFECV",
+    ):
+        rfecv.fit(X, y)
+    print(f"[Wrapper:{model_name}] RFECV completed.")
 
     selected_mask = rfecv.support_
     selected_features = [feature for feature, keep in zip(feature_names, selected_mask) if keep]
@@ -812,11 +891,19 @@ def run_wrapper_rfecv(
         param_grid=param_grid,
         scoring=scoring,
         refit=refit_metric,
-        cv=inner_cv,
+        cv=tuning_cv,
         n_jobs=grid_n_jobs,
         return_train_score=False,
     )
-    final_grid.fit(X[:, selected_mask], y)
+    print(f"[Wrapper:{model_name}] Final tuning on the selected subset...")
+    with tqdm_joblib(
+        total=grid_fit_total,
+        desc=f"[Wrapper:{model_name}] Final grid",
+    ):
+        final_grid.fit(X[:, selected_mask], y)
+    print(
+        f"[Wrapper:{model_name}] Final grid completed on {int(selected_mask.sum())} selected features."
+    )
 
     final_perm = permutation_importance(
         final_grid.best_estimator_,
@@ -850,6 +937,7 @@ def run_wrapper_rfecv(
     )
     ranking_df["wrapper_rank_order"] = np.arange(1, len(ranking_df) + 1)
 
+    initial_best_summary, initial_cv_results_df = summarize_grid_search(initial_grid)
     best_summary, cv_results_df = summarize_grid_search(final_grid)
     top_feature_slices: dict[int, pd.DataFrame] = {}
 
@@ -865,7 +953,12 @@ def run_wrapper_rfecv(
             rfecv_curve_df = pd.DataFrame(rfecv.cv_results_)
             rfecv_curve_df.to_csv(save_path / f"{model_name}_rfecv_curve.csv", index=False)
 
+        initial_cv_results_df.to_csv(
+            save_path / f"{model_name}_initial_grid_search_results.csv",
+            index=False,
+        )
         cv_results_df.to_csv(save_path / f"{model_name}_grid_search_results.csv", index=False)
+        save_json(initial_best_summary, save_path / f"{model_name}_initial_best_summary.json")
         save_json(best_summary, save_path / f"{model_name}_best_summary.json")
 
         top_feature_slices = save_top_ranked_feature_slices(
@@ -878,10 +971,12 @@ def run_wrapper_rfecv(
 
     return {
         "rfecv": rfecv,
+        "initial_grid": initial_grid,
         "final_grid": final_grid,
         "ranking_df": ranking_df,
         "selected_mask": selected_mask,
         "selected_features": selected_features,
+        "initial_best_summary": initial_best_summary,
         "best_summary": best_summary,
         "top_feature_slices": top_feature_slices,
     }
