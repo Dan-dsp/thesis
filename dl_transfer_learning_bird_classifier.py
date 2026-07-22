@@ -198,7 +198,7 @@
 """
 birds_resnet18_train_kfold_final_test.py
 
-What this script does (end-to-end, thesis-friendly):
+What this script does:
 1) Loads a dataset organized as:
       TRAIN_DIR/
         classA/ img1.jpg ...
