@@ -61,18 +61,18 @@ Important note:
 
 Main entrypoint:
 
-- [sl_dataframe_main.py](f:/01_Univalle/01_TG/01_Python/sl_dataframe_main.py)
+- [sl_dataframe_main.py](../sl_dataframe_main.py)
 
 Main implementation:
 
-- [sl_dataframe_construction.py](f:/01_Univalle/01_TG/01_Python/sl_dataframe_construction.py)
-- [sl_methods.py](f:/01_Univalle/01_TG/01_Python/sl_methods.py)
+- [sl_dataframe_construction.py](../sl_dataframe_construction.py)
+- [sl_methods.py](../sl_methods.py)
 
 ### What happens here
 
 1. Walk through every image in the dataset.
 2. Convert each image into a PyTorch tensor.
-3. Extract handcrafted features using [sl_methods.py](f:/01_Univalle/01_TG/01_Python/sl_methods.py).
+3. Extract handcrafted features using [sl_methods.py](../sl_methods.py).
 4. Save:
    - one per-image CSV mirroring the dataset structure
    - one global CSV with all samples together
@@ -118,11 +118,11 @@ Descriptive names make it immediately clear:
 
 Main entrypoint:
 
-- [sl_feature_comparison.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison.py)
+- [sl_feature_comparison.py](../sl_feature_comparison.py)
 
 Guide:
 
-- [sl_feature_comparison_guide.md](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison_guide.md)
+- [sl_feature_comparison_guide.md](../sl_feature_comparison_guide.md)
 
 ### What happens here
 
@@ -160,11 +160,11 @@ That is different from the training stage, which is stricter.
 
 Main entrypoint:
 
-- [sl_training_pipeline.py](f:/01_Univalle/01_TG/01_Python/sl_training_pipeline.py)
+- [sl_training_pipeline.py](../sl_training_pipeline.py)
 
 Guide:
 
-- [sl_training_pipeline_guide.md](f:/01_Univalle/01_TG/01_Python/sl_training_pipeline_guide.md)
+- [sl_training_pipeline_guide.md](../sl_training_pipeline_guide.md)
 
 ### What happens here
 
@@ -283,21 +283,21 @@ These folders are separate because they serve different stages of the workflow.
 
 If you want to rerun the shallow-learning pipeline from scratch, the current order is:
 
-1. Run [sl_dataframe_main.py](f:/01_Univalle/01_TG/01_Python/sl_dataframe_main.py)
+1. Run [sl_dataframe_main.py](../sl_dataframe_main.py)
    - regenerates the feature dataset
    - creates `dataset_features/shallow_learning_birds.csv`
 
-2. Run [sl_feature_comparison.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison.py)
+2. Run [sl_feature_comparison.py](../sl_feature_comparison.py)
    - analyzes the regenerated feature CSV
    - writes outputs into `sl_results`
 
-3. Run [sl_training_pipeline.py](f:/01_Univalle/01_TG/01_Python/sl_training_pipeline.py)
+3. Run [sl_training_pipeline.py](../sl_training_pipeline.py)
    - trains and compares models
    - writes outputs into `sl_outputs/runs/...`
 
 Optional:
 
-4. Review older helper scripts such as [sl_models_evaluation.py](f:/01_Univalle/01_TG/01_Python/sl_models_evaluation.py) only if you want custom extra plots beyond what the training pipeline already saves
+4. Review older helper scripts such as [sl_models_evaluation.py](../sl_models_evaluation.py) only if you want custom extra plots beyond what the training pipeline already saves
 
 ---
 
@@ -330,7 +330,7 @@ For `sl_outputs`, old runs are less dangerous now because each run gets its own 
 
 ### Feature analysis
 
-[sl_feature_comparison.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison.py) may use median imputation when needed for analysis methods.
+[sl_feature_comparison.py](../sl_feature_comparison.py) may use median imputation when needed for analysis methods.
 
 Why:
 
@@ -338,7 +338,7 @@ Why:
 
 ### Model training
 
-[sl_training_pipeline.py](f:/01_Univalle/01_TG/01_Python/sl_training_pipeline.py) does **not** silently impute.
+[sl_training_pipeline.py](../sl_training_pipeline.py) does **not** silently impute.
 
 Instead it:
 
@@ -383,13 +383,13 @@ The current shallow-learning process is:
 
 And the current recommended execution order is:
 
-1. [sl_dataframe_main.py](f:/01_Univalle/01_TG/01_Python/sl_dataframe_main.py)
-2. [sl_feature_comparison.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison.py)
-3. [sl_training_pipeline.py](f:/01_Univalle/01_TG/01_Python/sl_training_pipeline.py)
+1. [sl_dataframe_main.py](../sl_dataframe_main.py)
+2. [sl_feature_comparison.py](../sl_feature_comparison.py)
+3. [sl_training_pipeline.py](../sl_training_pipeline.py)
 
 You can also run the same three stages from one orchestrator:
 
-- [sl_main.py](f:/01_Univalle/01_TG/01_Python/sl_main.py)
+- [sl_main.py](../sl_main.py)
 
 This gives you two valid run modes:
 
@@ -397,15 +397,15 @@ This gives you two valid run modes:
 
 Use this when you only want one part:
 
-1. [sl_dataframe_main.py](f:/01_Univalle/01_TG/01_Python/sl_dataframe_main.py)
-2. [sl_feature_comparison.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison.py)
-3. [sl_training_pipeline.py](f:/01_Univalle/01_TG/01_Python/sl_training_pipeline.py)
+1. [sl_dataframe_main.py](../sl_dataframe_main.py)
+2. [sl_feature_comparison.py](../sl_feature_comparison.py)
+3. [sl_training_pipeline.py](../sl_training_pipeline.py)
 
 ### Run the whole pipeline in one Python process
 
 Use this when you want to avoid repeating import startup across separate script runs:
 
-1. [sl_main.py](f:/01_Univalle/01_TG/01_Python/sl_main.py)
+1. [sl_main.py](../sl_main.py)
 
 Important design detail:
 

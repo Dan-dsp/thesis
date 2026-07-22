@@ -4,12 +4,12 @@ This file is now the **high-level orchestrator** for the shallow-learning featur
 
 It no longer stores all statistical methods directly. Instead:
 
-- [sl_feature_comparison.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison.py) coordinates the workflow
-- [sl_feature_comparison_tools.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison_tools.py) contains the reusable methods
+- [sl_feature_comparison.py](../sl_feature_comparison.py) coordinates the workflow
+- [sl_feature_comparison_tools.py](../sl_feature_comparison_tools.py) contains the reusable methods
 
 If you want the implementation details of ANOVA, Fisher, MI, PCA, RFECV, Random Forest, or XGBoost importance, the companion guide is:
 
-- [sl_feature_comparison_tools_guide.md](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison_tools_guide.md)
+- [sl_feature_comparison_tools_guide.md](../sl_feature_comparison_tools_guide.md)
 
 ## Big Picture
 
@@ -166,7 +166,7 @@ This helps you inspect whether final selected features still contain strong redu
 
 ### 7. Training-ready CSV export
 
-After the rankings and diagnostics are finished, the workflow now exports reduced CSV datasets that can be used directly by [sl_training_pipeline.py](f:/01_Univalle/01_TG/01_Python/sl_training_pipeline.py).
+After the rankings and diagnostics are finished, the workflow now exports reduced CSV datasets that can be used directly by [sl_training_pipeline.py](../sl_training_pipeline.py).
 
 Each exported CSV keeps:
 
@@ -240,8 +240,8 @@ Purpose:
 
 This is the main workflow entry point used by both:
 
-- direct execution of [sl_feature_comparison.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison.py)
-- orchestration from [sl_main.py](f:/01_Univalle/01_TG/01_Python/sl_main.py)
+- direct execution of [sl_feature_comparison.py](../sl_feature_comparison.py)
+- orchestration from [sl_main.py](../sl_main.py)
 
 ## Output Structure
 
@@ -263,21 +263,21 @@ Inside `training_ready_datasets/`, the workflow now writes:
 - one reduced CSV per exported feature set
 - `training_ready_dataset_manifest.csv`
 
-The manifest is especially important because [sl_training_pipeline.py](f:/01_Univalle/01_TG/01_Python/sl_training_pipeline.py) can now use it to run all exported datasets automatically in batch mode.
+The manifest is especially important because [sl_training_pipeline.py](../sl_training_pipeline.py) can now use it to run all exported datasets automatically in batch mode.
 
 ## Recommended next step
 
 The intended workflow is now:
 
-1. run [sl_feature_comparison.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison.py)
+1. run [sl_feature_comparison.py](../sl_feature_comparison.py)
 2. review the exported feature families if needed
-3. run [sl_training_pipeline.py](f:/01_Univalle/01_TG/01_Python/sl_training_pipeline.py) either:
+3. run [sl_training_pipeline.py](../sl_training_pipeline.py) either:
    - on one selected CSV
    - or on the full manifest in batch mode
 
 ## Short Summary
 
-[sl_feature_comparison.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison.py) is now the **controller** of the feature-selection experiment.
+[sl_feature_comparison.py](../sl_feature_comparison.py) is now the **controller** of the feature-selection experiment.
 
 It:
 

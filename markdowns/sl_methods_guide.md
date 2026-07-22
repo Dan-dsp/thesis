@@ -1,12 +1,12 @@
 # `sl_methods.py` Guide
 
-This document explains what each function in [sl_methods.py](f:/01_Univalle/01_TG/01_Python/sl_methods.py) is doing, the theory behind the descriptor, and whether the implementation follows that theory closely.
+This document explains what each function in [sl_methods.py](../sl_methods.py) is doing, the theory behind the descriptor, and whether the implementation follows that theory closely.
 
 The goal is that you can read this file first, understand the workflow of each method, and then read the code with much less friction.
 
 ## Big Picture
 
-[sl_methods.py](f:/01_Univalle/01_TG/01_Python/sl_methods.py) is a **feature extraction library** for shallow learning. It converts one image tensor into a long handcrafted feature vector by concatenating several descriptor families:
+[sl_methods.py](../sl_methods.py) is a **feature extraction library** for shallow learning. It converts one image tensor into a long handcrafted feature vector by concatenating several descriptor families:
 
 - shape descriptors
 - contour descriptors
@@ -440,7 +440,7 @@ Uniform LBP with `P=8`, `R=1` is a classic texture descriptor:
 
 - each pixel is compared to its 8 neighbors
 - this yields an 8-bit local binary code
-- “uniform” patterns are those with at most 2 bit transitions
+- â€œuniformâ€ patterns are those with at most 2 bit transitions
 - uniform patterns are kept in dedicated bins, and all others are pooled into one bin
 
 #### Workflow in Code
@@ -611,7 +611,7 @@ This is a reasonable custom edge-histogram descriptor.
 
 #### Caveat
 
-This is **not an exact MPEG-7 edge histogram implementation**. It is a simpler custom version based on nearest orientation bins and a magnitude threshold for “nondirectional” edges.
+This is **not an exact MPEG-7 edge histogram implementation**. It is a simpler custom version based on nearest orientation bins and a magnitude threshold for â€œnondirectionalâ€ edges.
 
 ---
 
@@ -661,7 +661,7 @@ So the unified extractor is conceptually fine and the name/value bookkeeping is 
 
 ## Final Verdict
 
-Overall, [sl_methods.py](f:/01_Univalle/01_TG/01_Python/sl_methods.py) is a solid handcrafted-feature toolkit. Most implementations are theoretically consistent with the intended descriptors.
+Overall, [sl_methods.py](../sl_methods.py) is a solid handcrafted-feature toolkit. Most implementations are theoretically consistent with the intended descriptors.
 
 ### Methods that are well aligned with theory
 

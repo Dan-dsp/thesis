@@ -1,6 +1,6 @@
 # `sl_training_pipeline.py` Guide
 
-This guide explains the current behavior of [sl_training_pipeline.py](f:/01_Univalle/01_TG/01_Python/sl_training_pipeline.py), including the recent changes:
+This guide explains the current behavior of [sl_training_pipeline.py](../sl_training_pipeline.py), including the recent changes:
 
 - it reads the CSV from `dataset_features`
 - it can also read reduced training-ready CSVs exported by `sl_feature_comparison.py`
@@ -15,7 +15,7 @@ This guide explains the current behavior of [sl_training_pipeline.py](f:/01_Univ
 - it uses the `fast` XGBoost grid by default and keeps slower alternatives documented in comments
 - it measures runtime per stage and per model, then saves timing files in each run folder
 - it now shows a live progress bar for completed cross-validation fits when `tqdm` is available
-- it remains runnable on its own and can also be called by [sl_main.py](f:/01_Univalle/01_TG/01_Python/sl_main.py)
+- it remains runnable on its own and can also be called by [sl_main.py](../sl_main.py)
 
 ## Big Picture
 
@@ -77,7 +77,7 @@ That is the full feature dataset produced by the feature-extraction stage.
 
 ### 2. One selected reduced dataset
 
-If you want to train all models on one selected feature family, pass a training-ready CSV created by [sl_feature_comparison.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison.py):
+If you want to train all models on one selected feature family, pass a training-ready CSV created by [sl_feature_comparison.py](../sl_feature_comparison.py):
 
 ```powershell
 python sl_training_pipeline.py --data-csv "F:/01_Univalle/01_TG/sl_results/training_ready_datasets/filters/consensus/consensus_top_100_training.csv"
@@ -273,13 +273,13 @@ Example output structure:
 
 ```text
 output_root/
-├── latest_run.txt
-└── runs/
-    └── run_20260626_143015/
-        ├── models/
-        ├── reports/
-        ├── cm/
-        └── metadata/
+â”œâ”€â”€ latest_run.txt
+â””â”€â”€ runs/
+    â””â”€â”€ run_20260626_143015/
+        â”œâ”€â”€ models/
+        â”œâ”€â”€ reports/
+        â”œâ”€â”€ cm/
+        â””â”€â”€ metadata/
 ```
 
 ---
@@ -437,9 +437,9 @@ Example split behavior:
 ```text
 Original CSV split column:
 
-train rows → internally split into train_internal and val_internal
-test rows  → kept as final test set
-val rows   → ignored
+train rows â†’ internally split into train_internal and val_internal
+test rows  â†’ kept as final test set
+val rows   â†’ ignored
 ```
 
 Example returned split summary:
@@ -594,7 +594,7 @@ Purpose:
 Pipeline:
 
 ```text
-StandardScaler → SVC
+StandardScaler â†’ SVC
 ```
 
 Hyperparameters searched:
@@ -654,7 +654,7 @@ Purpose:
 Pipeline:
 
 ```text
-StandardScaler → KNeighborsClassifier
+StandardScaler â†’ KNeighborsClassifier
 ```
 
 Hyperparameters searched:
@@ -978,7 +978,7 @@ So if you do not currently see:
 
 - `F:/01_Univalle/01_TG/sl_outputs`
 
-that usually just means you have not run [sl_training_pipeline.py](f:/01_Univalle/01_TG/01_Python/sl_training_pipeline.py) yet with the current setup.
+that usually just means you have not run [sl_training_pipeline.py](../sl_training_pipeline.py) yet with the current setup.
 
 Inside `sl_outputs`, the code now writes:
 

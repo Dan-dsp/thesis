@@ -12,7 +12,7 @@ It lets you run the main stages from one Python process:
 
 If you run each stage separately, Python has to start and import everything again each time.
 
-Using [sl_main.py](f:/01_Univalle/01_TG/01_Python/sl_main.py) helps by:
+Using [sl_main.py](../sl_main.py) helps by:
 
 - starting one process
 - importing stages only when needed
@@ -22,12 +22,12 @@ Using [sl_main.py](f:/01_Univalle/01_TG/01_Python/sl_main.py) helps by:
 
 ### Feature extraction
 
-- [sl_dataframe_main.py](f:/01_Univalle/01_TG/01_Python/sl_dataframe_main.py)
+- [sl_dataframe_main.py](../sl_dataframe_main.py)
 
 ### Feature comparison / selection
 
-- [sl_feature_comparison.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison.py)
-- [sl_feature_comparison_tools.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison_tools.py)
+- [sl_feature_comparison.py](../sl_feature_comparison.py)
+- [sl_feature_comparison_tools.py](../sl_feature_comparison_tools.py)
 
 Important detail:
 
@@ -44,7 +44,7 @@ Important workflow update:
 
 ### Model training
 
-- [sl_training_pipeline.py](f:/01_Univalle/01_TG/01_Python/sl_training_pipeline.py)
+- [sl_training_pipeline.py](../sl_training_pipeline.py)
 
 Important workflow update:
 
@@ -88,7 +88,7 @@ Even though the argument name remains `run_feature_analysis`, the stage itself n
 
 ## Recommended usage
 
-Use [sl_main.py](f:/01_Univalle/01_TG/01_Python/sl_main.py) when you want the full end-to-end process:
+Use [sl_main.py](../sl_main.py) when you want the full end-to-end process:
 
 - feature extraction
 - feature comparison / selection
@@ -134,13 +134,13 @@ Practical examples:
 
 ## Short Summary
 
-[sl_main.py](f:/01_Univalle/01_TG/01_Python/sl_main.py) remains the top-level orchestrator.
+[sl_main.py](../sl_main.py) remains the top-level orchestrator.
 
 Its main update is conceptual:
 
 - the second stage is no longer just a small feature-analysis script
 - it now launches the refactored multi-stage feature-comparison workflow split across
-  - [sl_feature_comparison.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison.py)
-  - [sl_feature_comparison_tools.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison_tools.py)
+  - [sl_feature_comparison.py](../sl_feature_comparison.py)
+  - [sl_feature_comparison_tools.py](../sl_feature_comparison_tools.py)
 - the feature-comparison stage now prepares reduced training datasets for the training stage
 - the training stage can now evaluate one selected feature set or all exported feature sets in batch mode

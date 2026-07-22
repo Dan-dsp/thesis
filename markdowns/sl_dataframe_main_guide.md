@@ -2,11 +2,11 @@
 
 This file is the entrypoint for building the shallow-learning feature dataset.
 
-It does not define the feature-extraction logic itself. Instead, it configures paths and options, then calls [sl_dataframe_construction.py](F:/01_Univalle/01_TG/01_Python/sl_dataframe_construction.py) to do the real work.
+It does not define the feature-extraction logic itself. Instead, it configures paths and options, then calls [sl_dataframe_construction.py](../sl_dataframe_construction.py) to do the real work.
 
 ## Big Picture
 
-The purpose of [sl_dataframe_main.py](F:/01_Univalle/01_TG/01_Python/sl_dataframe_main.py) is:
+The purpose of [sl_dataframe_main.py](../sl_dataframe_main.py) is:
 
 1. read the original image dataset organized by split and species
 2. extract handcrafted shallow-learning features for each image
@@ -17,8 +17,8 @@ So this file is the dataset-construction stage for the shallow-learning pipeline
 
 It sits before:
 
-- [sl_feature_comparison.py](F:/01_Univalle/01_TG/01_Python/sl_feature_comparison.py)
-- [sl_training_pipeline.py](F:/01_Univalle/01_TG/01_Python/sl_training_pipeline.py)
+- [sl_feature_comparison.py](../sl_feature_comparison.py)
+- [sl_training_pipeline.py](../sl_training_pipeline.py)
 
 ---
 
@@ -63,7 +63,7 @@ The function `main()` is short, but it is the execution wrapper for the whole fe
 
 Workflow:
 
-1. Call `export_feature_dataset_with_structure(...)` from [sl_dataframe_construction.py](F:/01_Univalle/01_TG/01_Python/sl_dataframe_construction.py).
+1. Call `export_feature_dataset_with_structure(...)` from [sl_dataframe_construction.py](../sl_dataframe_construction.py).
 2. Ask it to:
    - read every image from `DATASET_ROOT`
    - resize images to `(224, 224)`
@@ -85,13 +85,13 @@ Workflow:
 
 This file delegates the actual heavy work to:
 
-- [sl_dataframe_construction.py](F:/01_Univalle/01_TG/01_Python/sl_dataframe_construction.py)
+- [sl_dataframe_construction.py](../sl_dataframe_construction.py)
 
 That construction file is the one that:
 
 - iterates through images
 - loads and resizes them
-- calls feature extraction from [sl_methods.py](F:/01_Univalle/01_TG/01_Python/sl_methods.py)
+- calls feature extraction from [sl_methods.py](../sl_methods.py)
 - assigns metadata columns
 - saves one CSV per image
 
@@ -105,7 +105,7 @@ So the design is:
 
 ## Output Files
 
-After running [sl_dataframe_main.py](F:/01_Univalle/01_TG/01_Python/sl_dataframe_main.py), you should get two output styles.
+After running [sl_dataframe_main.py](../sl_dataframe_main.py), you should get two output styles.
 
 ### 1. Per-image feature files
 
@@ -197,14 +197,14 @@ It only builds the feature dataset.
 That separation is intentional:
 
 - dataset construction happens here
-- feature analysis happens in [sl_feature_comparison.py](F:/01_Univalle/01_TG/01_Python/sl_feature_comparison.py)
-- model training happens in [sl_training_pipeline.py](F:/01_Univalle/01_TG/01_Python/sl_training_pipeline.py)
+- feature analysis happens in [sl_feature_comparison.py](../sl_feature_comparison.py)
+- model training happens in [sl_training_pipeline.py](../sl_training_pipeline.py)
 
 ---
 
 ## When To Run It
 
-Run [sl_dataframe_main.py](F:/01_Univalle/01_TG/01_Python/sl_dataframe_main.py) when:
+Run [sl_dataframe_main.py](../sl_dataframe_main.py) when:
 
 - the original image dataset changed
 - feature extraction logic changed
@@ -217,7 +217,7 @@ If the feature CSV already exists and has the correct schema, you do not need to
 
 ## Summary
 
-[sl_dataframe_main.py](F:/01_Univalle/01_TG/01_Python/sl_dataframe_main.py) is the shallow-learning feature-dataset builder entrypoint.
+[sl_dataframe_main.py](../sl_dataframe_main.py) is the shallow-learning feature-dataset builder entrypoint.
 
 It:
 

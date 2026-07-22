@@ -2,12 +2,12 @@
 
 This file contains the **implementation methods** used by:
 
-- [sl_feature_comparison.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison.py)
+- [sl_feature_comparison.py](../sl_feature_comparison.py)
 
 So the split is now:
 
-- [sl_feature_comparison.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison.py): workflow and comparison logic
-- [sl_feature_comparison_tools.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison_tools.py): reusable statistical, model, and plotting tools
+- [sl_feature_comparison.py](../sl_feature_comparison.py): workflow and comparison logic
+- [sl_feature_comparison_tools.py](../sl_feature_comparison_tools.py): reusable statistical, model, and plotting tools
 
 ## Big Picture
 
@@ -260,11 +260,11 @@ This is mainly used at the end of the workflow to inspect the final candidate li
 
 ## Short Summary
 
-[sl_feature_comparison_tools.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison_tools.py) is the file that **does the actual work**:
+[sl_feature_comparison_tools.py](../sl_feature_comparison_tools.py) is the file that **does the actual work**:
 
 - it loads and cleans the data
 - computes the statistical rankings
 - runs wrapper and embedded selectors
 - saves reusable outputs
 
-[sl_feature_comparison.py](f:/01_Univalle/01_TG/01_Python/sl_feature_comparison.py) then uses these tools to compare stages and organize the final feature lists.
+[sl_feature_comparison.py](../sl_feature_comparison.py) then uses these tools to compare stages and organize the final feature lists.
