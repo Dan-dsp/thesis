@@ -56,6 +56,7 @@ except ImportError:
     tqdm = None
 
 
+# Default inputs/outputs for a single full-feature training run.
 DEFAULT_DATA_CSV_PATH = r"F:/01_Univalle/01_TG/dataset_features/shallow_learning_birds.csv"
 DEFAULT_OUT_DIR = Path(r"F:/01_Univalle/01_TG/sl_outputs")
 DEFAULT_TRAINING_READY_MANIFEST_PATH = Path(
@@ -69,12 +70,16 @@ DUPLICATE_LEGACY_FEATURES = {"f39"}
 
 
 def _import_pyplot():
+    """Import pyplot lazily because training can run without producing figures."""
+    # Import plotting only when a confusion matrix must be written.
     import matplotlib.pyplot as plt
 
     return plt
 
 
 def set_seed(seed: int = 42) -> None:
+    """Seed Python and NumPy random generators used by this module."""
+    # Seed the random sources used directly by this module.
     import random
 
     random.seed(seed)
@@ -82,6 +87,8 @@ def set_seed(seed: int = 42) -> None:
 
 
 def format_seconds(seconds: float) -> str:
+    """Format elapsed seconds as a compact seconds, minutes, or hours string."""
+    # Use one formatter for console logs and machine-readable timing summaries.
     total_seconds = max(0.0, float(seconds))
     minutes, secs = divmod(total_seconds, 60.0)
     hours, minutes = divmod(minutes, 60.0)
@@ -95,11 +102,13 @@ def format_seconds(seconds: float) -> str:
 
 @contextmanager
 def tqdm_joblib(total: int, desc: str):
+    """Bridge joblib batch completion events to an optional tqdm progress bar."""
     if tqdm is None:
         yield None
         return
 
     progress_bar = tqdm(total=total, desc=desc, unit="fit", dynamic_ncols=True)
+    # Patch joblib's completion callback only while GridSearchCV is running.
     original_callback = parallel.BatchCompletionCallBack
 
     class TqdmBatchCompletionCallback(original_callback):
@@ -116,6 +125,8 @@ def tqdm_joblib(total: int, desc: str):
 
 
 def get_feature_columns(df: pd.DataFrame) -> list[str]:
+    """Detect model inputs while excluding identifiers, labels, and duplicate legacy columns."""
+    # Prefer readable descriptive columns and fall back to the old f* schema.
     numeric_cols = [
         c for c in df.columns
         if c not in METADATA_COLUMNS and pd.api.types.is_numeric_dtype(df[c])
@@ -136,6 +147,8 @@ def get_feature_columns(df: pd.DataFrame) -> list[str]:
 
 
 def assert_all_finite(name: str, X: np.ndarray) -> None:
+    """Raise a diagnostic error when a matrix contains NaN or infinite values."""
+    # Fail before model fitting so data-quality problems have a clear source.
     finite_mask = np.isfinite(X)
     if finite_mask.all():
         return
@@ -162,6 +175,7 @@ def make_balanced_subset(
     min_count = int(counts.min())
     rng = np.random.default_rng(seed)
 
+    # Downsampling is used only for fair validation/test metrics, never training.
     selected_indices = []
     for cls in classes:
         cls_indices = np.flatnonzero(y == cls)
@@ -174,6 +188,8 @@ def make_balanced_subset(
 
 
 def prepare_run_output_dirs(output_root: Path) -> dict[str, Path]:
+    """Create a timestamped run directory and its models, reports, plots, and metadata folders."""
+    # Timestamped run directories prevent artifacts from different runs mixing.
     output_root.mkdir(parents=True, exist_ok=True)
     runs_dir = output_root / "runs"
     runs_dir.mkdir(parents=True, exist_ok=True)
@@ -204,6 +220,8 @@ def prepare_run_output_dirs(output_root: Path) -> dict[str, Path]:
 
 
 def load_training_ready_manifest(manifest_csv_path: str | Path) -> pd.DataFrame:
+    """Load and validate the feature-dataset manifest created by comparison/export code."""
+    # The manifest connects feature-selection outputs to batch model training.
     manifest_path = Path(manifest_csv_path)
     if not manifest_path.exists():
         raise FileNotFoundError(
@@ -227,15 +245,18 @@ def load_training_ready_manifest(manifest_csv_path: str | Path) -> pd.DataFrame:
 def collect_batch_training_datasets(
     manifest_csv_path: str | Path,
 ) -> list[dict[str, Any]]:
+    """Validate manifest entries and normalize them into batch-run configuration records."""
     manifest_df = load_training_ready_manifest(manifest_csv_path)
     datasets: list[dict[str, Any]] = []
 
     def optional_int(row: dict[str, Any], key: str) -> int | None:
+        """Return an optional integer from a CSV row while treating blank cells as missing."""
         value = row.get(key)
         if value is None or pd.isna(value):
             return None
         return int(value)
 
+    # Validate each CSV before beginning an expensive batch experiment.
     for row in manifest_df.to_dict(orient="records"):
         csv_path = Path(str(row["csv_path"]))
         if not csv_path.exists():
@@ -260,6 +281,8 @@ def annotate_comparison_table(
     dataset_info: dict[str, Any],
     run_dir: Path,
 ) -> pd.DataFrame:
+    """Add feature-set identity and output path columns to one model comparison table."""
+    # Prefix results with their feature-set identity before combining tables.
     annotated_df = comparison_df.copy()
     annotated_df.insert(0, "dataset_variant", dataset_info["variant"])
     annotated_df.insert(0, "dataset_method_name", dataset_info["method_name"])
@@ -272,6 +295,12 @@ def annotate_comparison_table(
 
 
 def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42) -> Dict[str, Any]:
+    """Load one feature CSV and prepare train, internal validation, and untouched test arrays.
+
+    Only original ``train`` rows are split for validation. Original ``test``
+    rows remain unseen until final evaluation to preserve an honest test score.
+    """
+    # The original test split stays untouched; validation comes only from train.
     df = pd.read_csv(csv_path)
     feature_cols = get_feature_columns(df)
 
@@ -284,6 +313,7 @@ def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42)
     if "split" not in df.columns:
         raise ValueError("Missing required 'split' column.")
 
+    # Float32 keeps the feature matrix compact while remaining sufficient for these models.
     X = df[feature_cols].to_numpy(dtype=np.float32)
     y_raw = df["species"].to_numpy()
     label_encoder = LabelEncoder()
@@ -291,6 +321,7 @@ def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42)
     class_names = label_encoder.classes_
     splits = df["split"].to_numpy()
 
+    # These masks preserve the producer-defined test partition exactly.
     train_mask = splits == "train"
     test_mask = splits == "test"
 
@@ -303,6 +334,7 @@ def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42)
         print("[INFO] Existing 'val' rows detected, but they will be ignored.")
         print("[INFO] Validation is now created internally from the TRAIN split only.")
 
+    # Keep a full-train copy for the final refit after model selection.
     X_train_full = X[train_mask]
     y_train_full = y[train_mask]
     X_test = X[test_mask]
@@ -311,6 +343,7 @@ def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42)
     if not 0.0 < val_fraction < 1.0:
         raise ValueError("val_fraction must be between 0 and 1.")
 
+    # Stratification preserves the class mix in the internal validation split.
     splitter = StratifiedShuffleSplit(n_splits=1, test_size=val_fraction, random_state=seed)
     try:
         train_idx, val_idx = next(splitter.split(X_train_full, y_train_full))
@@ -324,6 +357,7 @@ def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42)
     y_train = y_train_full[train_idx]
     X_val = X_train_full[val_idx]
     y_val = y_train_full[val_idx]
+    # Report balanced validation/test metrics so large species classes do not dominate.
     X_val_balanced, y_val_balanced, val_balanced_support = make_balanced_subset(
         X_val, y_val, seed=seed
     )
@@ -337,6 +371,7 @@ def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42)
     assert_all_finite("X_test", X_test)
     assert_all_finite("X_test_balanced", X_test_balanced)
 
+    # Record which column naming convention was used for downstream inspection.
     feature_schema = (
         "descriptive"
         if feature_cols and any(not c.startswith("f") for c in feature_cols)
@@ -352,6 +387,7 @@ def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42)
     absolute_internal_train = absolute_train_indices[train_idx]
     absolute_internal_val = absolute_train_indices[val_idx]
 
+    # Record original rows assigned to each pipeline subset for reproducibility.
     assignment = pd.Series("ignored", index=df.index, dtype=object)
     assignment.iloc[absolute_internal_train] = "train_internal"
     assignment.iloc[absolute_internal_val] = "val_internal"
@@ -408,8 +444,14 @@ def make_model_spaces(
     tree_model_n_jobs: int = 1,
     xgb_n_jobs: int = 1,
 ) -> Dict[str, Tuple[Pipeline, Dict[str, list]]]:
+    """Build candidate pipelines and finite hyperparameter grids for every model family.
+
+    XGBoost is optional: when unavailable, the remaining models still form a
+    complete experiment instead of failing at import time.
+    """
     spaces: Dict[str, Tuple[Pipeline, Dict[str, list]]] = {}
 
+    # Scaling is required for distance- and margin-based models, but not trees.
     svm_pipe = Pipeline(
         [
             ("scaler", StandardScaler()),
@@ -427,6 +469,7 @@ def make_model_spaces(
             ("clf", RandomForestClassifier(random_state=seed, n_jobs=tree_model_n_jobs)),
         ]
     )
+    # The grid deliberately explores capacity and regularization choices for each family.
     rf_grid = {
         "clf__n_estimators": [200, 400],
         "clf__max_depth": [None, 15, 30],
@@ -528,9 +571,12 @@ def evaluate(
     label_encoder: LabelEncoder,
     labels: np.ndarray,
 ) -> Dict[str, Any]:
+    """Predict one evaluation split and return macro metrics, report text, and matrix."""
+    # Convert predictions back to species names before reports and matrices.
     y_pred_encoded = np.asarray(model.predict(X), dtype=np.int64)
     y_true = label_encoder.inverse_transform(np.asarray(y_encoded, dtype=np.int64))
     y_pred = label_encoder.inverse_transform(y_pred_encoded)
+    # Macro metrics give every species equal weight regardless of sample count.
     acc = accuracy_score(y_true, y_pred)
     prec, rec, f1, _ = precision_recall_fscore_support(
         y_true, y_pred, average="macro", zero_division=0
@@ -548,6 +594,8 @@ def evaluate(
 
 
 def save_confusion_matrix(cm: np.ndarray, labels: np.ndarray, out_path: Path, title: str) -> None:
+    """Render a labeled confusion-matrix PNG with contrasting per-cell counts."""
+    # Save a standalone, labeled image so model errors are easy to inspect.
     plt = _import_pyplot()
     fig, ax = plt.subplots(figsize=(8, 6))
     im = ax.imshow(cm, interpolation="nearest")
@@ -561,6 +609,7 @@ def save_confusion_matrix(cm: np.ndarray, labels: np.ndarray, out_path: Path, ti
     ax.set_yticklabels(labels)
 
     max_val = cm.max() if cm.size > 0 else 1
+    # Contrast annotation color with each cell so dense matrices remain readable.
     for i in range(cm.shape[0]):
         for j in range(cm.shape[1]):
             color = "white" if cm[i, j] > (max_val / 2) else "black"
@@ -584,12 +633,19 @@ def run_training_pipeline(
     tree_model_n_jobs: int = 1,
     xgb_n_jobs: int = 1,
 ) -> Path:
+    """Train, tune, validate, refit, test, and save every enabled model family.
+
+    Model selection uses balanced internal validation. Each chosen configuration
+    is then refitted on all original train rows and evaluated once on test rows.
+    The returned run directory contains all artifacts required to inspect it.
+    """
     data_csv_path = str(data_csv_path)
     out_dir = Path(out_dir)
     total_start = time.perf_counter()
     stage_timings = []
     model_timings = []
 
+    # Keep the split and model search reproducible for the supplied seed.
     set_seed(seed)
 
     stage_start = time.perf_counter()
@@ -609,6 +665,7 @@ def run_training_pipeline(
     stage_timings.append({"stage": "load_split_dataset", "seconds": stage_elapsed})
     print(f"[TIME] load_split_dataset: {format_seconds(stage_elapsed)}")
 
+    # Unpack once so the roles of each split stay clear throughout the run.
     X_train, y_train = data["X_train"], data["y_train"]
     X_val, y_val = data["X_val"], data["y_val"]
     X_val_balanced, y_val_balanced = data["X_val_balanced"], data["y_val_balanced"]
@@ -636,6 +693,7 @@ def run_training_pipeline(
     print(f"[INFO] Run directory:       {run_dir}")
 
     stage_start = time.perf_counter()
+    # Persist the data schema and split details needed to reproduce this run.
     with (metadata_dir / "feature_columns.json").open("w", encoding="utf-8") as f:
         json.dump(feature_cols, f, indent=2)
     (metadata_dir / "feature_columns.txt").write_text("\n".join(feature_cols), encoding="utf-8")
@@ -675,6 +733,7 @@ def run_training_pipeline(
     print(f"[TIME] save_initial_metadata: {format_seconds(stage_elapsed)}")
 
     stage_start = time.perf_counter()
+    # Use the same stratified folds for every model to make CV scores comparable.
     cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=seed)
     spaces = make_model_spaces(
         seed=seed,
@@ -693,15 +752,18 @@ def run_training_pipeline(
     best_models_train = {}
     best_params = {}
 
+    # Tune each candidate on internal-train data, then compare balanced validation scores.
     for model_name, (pipe, grid) in spaces.items():
         print("\n" + "=" * 70)
         print(f"[INFO] Tuning model: {model_name}")
         model_stage_start = time.perf_counter()
+        # Estimate work up front to make long searches easier to monitor.
         n_candidates = len(list(ParameterGrid(grid)))
         total_cv_fits = n_candidates * cv_folds
         print(f"[INFO] Grid candidates:    {n_candidates}")
         print(f"[INFO] Expected CV fits:  {total_cv_fits}")
 
+        # Refit=True leaves the best cross-validated estimator ready for validation.
         gs = GridSearchCV(
             estimator=pipe,
             param_grid=grid,
@@ -728,6 +790,7 @@ def run_training_pipeline(
         print(f"[TIME] {model_name} tuning: {format_seconds(tuning_elapsed)}")
 
         eval_stage_start = time.perf_counter()
+        # Validation guides model comparison; it is never used to refit this model.
         val_metrics = evaluate(
             best_model,
             X_val_balanced,
@@ -756,6 +819,7 @@ def run_training_pipeline(
             f"{model_name} - Internal VAL (Balanced)",
         )
 
+        # Save the train-only model separately from the later full-train refit.
         joblib.dump(best_model, models_dir / f"{model_name}_train_only.pkl")
         validation_elapsed = time.perf_counter() - eval_stage_start
         total_model_elapsed = time.perf_counter() - model_stage_start
@@ -771,6 +835,7 @@ def run_training_pipeline(
             }
         )
 
+    # Refit the selected configuration using all original train rows before one test evaluation.
     for model_name, train_best_model in best_models_train.items():
         model_stage_start = time.perf_counter()
         final_model = clone(train_best_model)
@@ -778,6 +843,7 @@ def run_training_pipeline(
         refit_elapsed = time.perf_counter() - model_stage_start
 
         eval_stage_start = time.perf_counter()
+        # Test metrics are calculated only after refitting on the complete train split.
         test_metrics = evaluate(
             final_model,
             X_test_balanced,
@@ -805,6 +871,7 @@ def run_training_pipeline(
             f"{model_name} - TEST (Balanced)",
         )
 
+        # This is the deployable model: trained on all permitted training rows.
         joblib.dump(final_model, models_dir / f"{model_name}_final.pkl")
         test_eval_elapsed = time.perf_counter() - eval_stage_start
         total_model_elapsed = time.perf_counter() - model_stage_start
@@ -822,6 +889,7 @@ def run_training_pipeline(
         )
 
     stage_start = time.perf_counter()
+    # Rank model families independently on validation and untouched test data.
     val_df = pd.DataFrame(val_rows).sort_values("val_f1_macro", ascending=False)
     test_df = pd.DataFrame(test_rows).sort_values("test_f1_macro", ascending=False)
 
@@ -834,6 +902,7 @@ def run_training_pipeline(
     pd.DataFrame(stage_timings).to_csv(run_dir / "stage_timings.csv", index=False)
     pd.DataFrame(model_timings).to_csv(run_dir / "model_timings.csv", index=False)
     total_elapsed = time.perf_counter() - total_start
+    # Preserve granular timings because grid-search cost varies by model and feature count.
     with (run_dir / "runtime_summary.json").open("w", encoding="utf-8") as f:
         json.dump(
             {
@@ -870,6 +939,12 @@ def run_training_pipeline_batch(
     tree_model_n_jobs: int = 1,
     xgb_n_jobs: int = 1,
 ) -> Path:
+    """Run the same training protocol for every feature CSV in an export manifest.
+
+    It aggregates per-dataset validation and test rankings so the impact of
+    feature-selection method and list size can be compared side by side.
+    """
+    # A batch reuses the same evaluation protocol for every exported feature set.
     datasets = collect_batch_training_datasets(manifest_csv_path)
 
     batch_root = Path(batch_out_dir)
@@ -898,6 +973,7 @@ def run_training_pipeline_batch(
         print(f"[BATCH] Dataset {idx}/{len(datasets)}: {dataset_label}")
         print(f"[BATCH] CSV path: {dataset_info['csv_path']}")
 
+        # Isolate every feature variant's artifacts to avoid filename collisions.
         dataset_out_dir = (
             per_dataset_root
             / dataset_info["family"]
@@ -923,6 +999,7 @@ def run_training_pipeline_batch(
 
         val_df = pd.read_csv(run_dir / "internal_validation_comparison.csv")
         test_df = pd.read_csv(run_dir / "test_comparison.csv")
+        # Add the feature-selection identity before concatenating dataset results.
         validation_tables.append(annotate_comparison_table(val_df, dataset_info, run_dir))
         test_tables.append(annotate_comparison_table(test_df, dataset_info, run_dir))
 
@@ -943,12 +1020,14 @@ def run_training_pipeline_batch(
             "best_test_f1_macro": top_test_row["test_f1_macro"],
         })
 
+    # This file links every dataset variant to its own detailed run directory.
     batch_manifest_df = pd.DataFrame(batch_rows).sort_values(
         ["family", "method_name", "variant"],
         ignore_index=True,
     )
     batch_manifest_df.to_csv(batch_run_dir / "batch_run_manifest.csv", index=False)
 
+    # An empty table is still a valid batch outcome when no datasets are listed.
     if validation_tables:
         validation_all_df = pd.concat(validation_tables, ignore_index=True)
         validation_all_df.to_csv(
@@ -990,6 +1069,8 @@ def main(
     batch_manifest_csv_path: str | Path | None = None,
     batch_out_dir: str | Path = DEFAULT_BATCH_OUT_DIR,
 ) -> None:
+    """Choose single-dataset training or manifest-driven batch training."""
+    # Supplying a manifest switches from one dataset to all exported datasets.
     if batch_manifest_csv_path is not None:
         run_training_pipeline_batch(
             manifest_csv_path=batch_manifest_csv_path,

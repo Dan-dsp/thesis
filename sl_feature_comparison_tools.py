@@ -16,7 +16,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -38,17 +38,21 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.svm import SVC
 
 
+# Columns that describe a sample instead of representing a predictor variable.
 METADATA_COLUMNS = {"sample_id", "sample_name", "orig_filename", "species", "split"}
 METADATA_COLUMN_ORDER = ("sample_id", "sample_name", "orig_filename", "species", "split")
 EXCLUDED_FEATURE_PREFIXES: tuple[str, ...] = ()
 DUPLICATE_DESCRIPTIVE_FEATURES = {"affine_6"}
 DUPLICATE_LEGACY_FEATURES = {"f39"}
+# Rankings are stored once at this size; smaller lists are ordered slices of it.
 DEFAULT_TOP_K = 100
 DERIVED_TOP_COUNTS = (80, 50)
 _ACTIVE_WRAPPER_FIT_PROGRESS = None
 
 
 def _import_pyplot():
+    """Import and return pyplot only for helpers that actually create figures."""
+    # Delay the Matplotlib import so non-plotting commands do not load its backend.
     import matplotlib.pyplot as plt
 
     return plt
@@ -60,6 +64,7 @@ def tqdm_joblib(total: int, desc: str):
     Show a tqdm progress bar for joblib-driven tasks such as GridSearchCV.
     """
     progress_bar = tqdm(total=total, desc=desc, unit="fit", dynamic_ncols=True)
+    # Temporarily hook joblib's batch callback to advance a visible progress bar.
     original_callback = parallel.BatchCompletionCallBack
 
     class TqdmBatchCompletionCallback(original_callback):
@@ -92,6 +97,7 @@ def wrapper_fit_progress(total: int, desc: str):
 
 
 def _update_wrapper_fit_progress(step: int = 1) -> None:
+    """Advance the active RFECV progress bar, if wrapper selection created one."""
     global _ACTIVE_WRAPPER_FIT_PROGRESS
 
     if _ACTIVE_WRAPPER_FIT_PROGRESS is not None:
@@ -99,12 +105,15 @@ def _update_wrapper_fit_progress(step: int = 1) -> None:
 
 
 def ensure_dir(save_dir: str | Path) -> Path:
+    """Create ``save_dir`` and return it as a normalized ``Path`` object."""
+    # Normalize the path and make the helper safe to call repeatedly.
     save_path = Path(save_dir)
     save_path.mkdir(parents=True, exist_ok=True)
     return save_path
 
 
 def save_json(data: dict[str, Any], out_path: str | Path) -> None:
+    """Write a small, human-readable JSON artifact using UTF-8 encoding."""
     out_path = Path(out_path)
     out_path.write_text(json.dumps(data, indent=2, ensure_ascii=True), encoding="utf-8")
 
@@ -130,6 +139,7 @@ def get_feature_columns(df: pd.DataFrame, label_col: str = "species") -> list[st
         if not col.startswith("f") and col not in DUPLICATE_DESCRIPTIVE_FEATURES
     ]
 
+    # Prefer descriptive names; use f0, f1, ... only for legacy datasets.
     selected = descriptive_cols if descriptive_cols else legacy_f_cols
     selected = [
         col for col in selected
@@ -139,6 +149,7 @@ def get_feature_columns(df: pd.DataFrame, label_col: str = "species") -> list[st
 
 
 def get_metadata_columns(df: pd.DataFrame, label_col: str = "species") -> list[str]:
+    """Return available metadata columns in a stable order for dataset exports."""
     metadata_cols = [col for col in METADATA_COLUMN_ORDER if col in df.columns]
     if label_col in df.columns and label_col not in metadata_cols:
         metadata_cols.append(label_col)
@@ -168,6 +179,7 @@ def build_training_ready_dataset(
             f"{preview}"
         )
 
+    # Preserve the ranking order while removing duplicate feature names.
     seen: set[str] = set()
     ordered_features: list[str] = []
     for feature in selected_features:
@@ -192,6 +204,7 @@ def export_training_ready_dataset(
     out_path: str | Path,
     label_col: str = "species",
 ) -> dict[str, Any]:
+    """Save one selected-feature CSV and return metadata for the batch manifest."""
     export_df = build_training_ready_dataset(df, selected_features, label_col=label_col)
     output_path = Path(out_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -226,6 +239,7 @@ def load_features_and_labels(
     if label_col not in df.columns:
         raise ValueError(f"Label column '{label_col}' not found in dataset.")
 
+    # Coerce invalid entries to NaN, then replace infinities before imputation.
     feature_df = df[feature_names].apply(pd.to_numeric, errors="coerce")
     feature_df = feature_df.replace([np.inf, -np.inf], np.nan)
 
@@ -241,6 +255,7 @@ def load_features_and_labels(
         print("[WARN] Top columns with missing values:")
         print(missing_by_column.head(10))
 
+        # Median imputation is robust to outlying feature values.
         imputer = SimpleImputer(strategy="median")
         X = imputer.fit_transform(feature_df)
     else:
@@ -251,12 +266,15 @@ def load_features_and_labels(
 
 
 def encode_labels(y: np.ndarray) -> tuple[np.ndarray, LabelEncoder]:
+    """Encode species labels and retain the encoder needed to reverse the mapping."""
+    # Convert class names to stable integer labels required by sklearn estimators.
     label_encoder = LabelEncoder()
-    y_encoded = label_encoder.fit_transform(np.asarray(y))
+    y_encoded = np.asarray(label_encoder.fit_transform(np.asarray(y)), dtype=np.int64)
     return y_encoded, label_encoder
 
 
 def build_scoring_dict() -> dict[str, Any]:
+    """Define the common accuracy, macro-F1, and MCC scoring metrics for searches."""
     return {
         "accuracy": "accuracy",
         "f1_macro": make_scorer(f1_score, average="macro", zero_division=0),
@@ -277,6 +295,7 @@ def save_top_ranked_feature_slices(
     save_path = ensure_dir(save_dir)
     top_reference = ranking_df.head(top_k).copy().reset_index(drop=True)
 
+    # Save the canonical list first, then derive every smaller requested list.
     requested_sizes = [top_k]
     requested_sizes.extend(size for size in derived_top_counts if size < top_k)
 
@@ -309,10 +328,12 @@ def run_shapiro_tests(
     for very large samples. When a feature has more than `max_samples` values,
     a deterministic subsample is used.
     """
+    # Sampling makes the normality test practical without changing its purpose.
     rng = np.random.default_rng(random_state)
     rows: list[dict[str, Any]] = []
 
     for feature in tqdm(feature_names, desc="Shapiro per feature", leave=False):
+        # Ignore values that cannot participate in a numerical distribution test.
         series = pd.to_numeric(df[feature], errors="coerce").replace([np.inf, -np.inf], np.nan)
         values = series.dropna().to_numpy(dtype=np.float64, copy=True)
 
@@ -374,6 +395,8 @@ def compute_anova_scores(
     feature_names: list[str],
     save_dir: str | Path | None = None,
 ) -> pd.DataFrame:
+    """Rank features independently with one-way ANOVA F-scores and p-values."""
+    # ANOVA measures whether a feature mean differs across species classes.
     f_scores, p_values = f_classif(X, y)
     result = pd.DataFrame({
         "feature": feature_names,
@@ -404,12 +427,14 @@ def compute_fisher_scores(
     feature_names: list[str],
     save_dir: str | Path | None = None,
 ) -> pd.DataFrame:
+    """Rank features using the multiclass Fisher discriminant ratio."""
     X = np.asarray(X)
     y = np.asarray(y)
     classes = np.unique(y)
     _, n_features = X.shape
 
     fisher_scores = np.zeros(n_features, dtype=np.float64)
+    # Fisher's ratio favors high between-class variation and low within-class variation.
     for j in tqdm(range(n_features), desc="Fisher per feature", leave=False):
         xj = X[:, j]
         mu = xj.mean()
@@ -456,6 +481,8 @@ def compute_mutual_information(
     feature_names: list[str],
     save_dir: str | Path | None = None,
 ) -> pd.DataFrame:
+    """Estimate the non-linear information each continuous feature carries about labels."""
+    # Mutual information can capture relationships that are not linear.
     mi = mutual_info_classif(X, y, discrete_features=False, random_state=42)
     result = pd.DataFrame({
         "feature": feature_names,
@@ -486,9 +513,11 @@ def run_pca_analysis(
     standardize: bool = True,
     save_dir: str | Path | None = None,
 ) -> tuple[PCA, pd.DataFrame]:
+    # Work on a copy because standardization must not alter the caller's matrix.
     X_proc = np.array(X, dtype=np.float64, copy=True)
     if standardize:
         scaler = StandardScaler()
+        # PCA is scale-sensitive, so standardization is normally required.
         X_proc = scaler.fit_transform(X_proc)
 
     n_components = min(n_components, X_proc.shape[1])
@@ -530,6 +559,7 @@ def rank_pca_features(
     """
     abs_loadings = loadings_df.abs()
     weights = np.asarray(explained_variance_ratio, dtype=np.float64)
+    # Weight each component by the amount of variance it explains.
     weights = weights / weights.sum()
 
     ranked = loadings_df.copy()
@@ -563,9 +593,11 @@ def plot_violin_for_features(
     fig_height: int = 10,
     file_name: str = "violin_features.png",
 ) -> None:
+    """Plot one class-wise violin chart per requested feature and optionally save it."""
     if not features:
         return
 
+    # One violin per class makes class-wise feature distributions comparable.
     classes = sorted(df[label_col].unique())
     n_classes = len(classes)
     n_feats = len(features)
@@ -583,10 +615,11 @@ def plot_violin_for_features(
     for idx, feature in enumerate(features):
         ax = axes[idx]
         for pos, class_name in enumerate(classes):
-            values = pd.to_numeric(
-                df.loc[df[label_col] == class_name, feature],
-                errors="coerce",
-            ).dropna().to_numpy(dtype=np.float64)
+            # The row/column selection is a Series. The explicit cast tells
+            # Pylance which pd.to_numeric overload to use (Series, not float).
+            feature_series = cast(pd.Series, df.loc[df[label_col] == class_name, feature])
+            numeric_series = pd.to_numeric(feature_series, errors="coerce")
+            values = numeric_series.dropna().to_numpy(dtype=np.float64)
             if values.size > 0:
                 ax.violinplot(values, positions=[pos], showmedians=True)
 
@@ -617,12 +650,14 @@ def plot_correlation_matrix(
     fig_height: int = 10,
     file_stem: str = "correlation_matrix",
 ) -> pd.DataFrame:
+    """Compute a full correlation table and optionally render a readable subset as a heatmap."""
     corr = df[feature_names].apply(pd.to_numeric, errors="coerce").corr()
 
     if save_dir is not None:
         save_path = ensure_dir(save_dir)
         corr.to_csv(save_path / f"{file_stem}.csv")
 
+        # Limit only the image size; the full numeric correlation table is saved.
         corr_plot = corr.iloc[:max_features, :max_features]
         plt = _import_pyplot()
         plt.figure(figsize=(fig_width, fig_height))
@@ -635,8 +670,12 @@ def plot_correlation_matrix(
             vmax=1,
         )
         plt.colorbar(im)
-        plt.xticks(range(len(corr_plot.columns)), corr_plot.columns, rotation=90)
-        plt.yticks(range(len(corr_plot.index)), corr_plot.index)
+        # Matplotlib expects a standard sequence of strings, whereas pandas
+        # exposes labels as Index objects.
+        column_labels = corr_plot.columns.astype(str).tolist()
+        row_labels = corr_plot.index.astype(str).tolist()
+        plt.xticks(range(len(column_labels)), column_labels, rotation=90)
+        plt.yticks(range(len(row_labels)), row_labels)
         plt.title(f"Correlation Matrix (First {len(corr_plot.columns)} Features)")
         plt.tight_layout()
         plt.savefig(save_path / f"{file_stem}.png", dpi=300)
@@ -646,6 +685,8 @@ def plot_correlation_matrix(
 
 
 def build_wrapper_model_spaces(seed: int = 42) -> dict[str, tuple[Pipeline, dict[str, list[Any]]]]:
+    """Return scaled SVM/k-NN pipelines and their hyperparameter grids for RFECV."""
+    # Wrapper methods repeatedly fit these pipelines while RFECV removes features.
     svm_pipe = Pipeline(
         [
             ("scaler", StandardScaler()),
@@ -681,6 +722,8 @@ def build_embedded_model_spaces(
     tree_model_n_jobs: int = 1,
     xgb_n_jobs: int = 1,
 ) -> dict[str, tuple[Pipeline, dict[str, list[Any]]]]:
+    """Return tree models whose fitted estimators provide native feature importances."""
+    # Embedded models supply their own native feature-importance values.
     spaces: dict[str, tuple[Pipeline, dict[str, list[Any]]]] = {}
 
     rf_pipe = Pipeline(
@@ -744,6 +787,7 @@ class PermutationImportanceWrapper(BaseEstimator, ClassifierMixin):
         random_state: int = 42,
         n_jobs: int | None = 1,
     ) -> None:
+        """Store cloneable estimator settings required by sklearn's estimator API."""
         self.estimator = estimator
         self.scoring = scoring
         self.n_repeats = n_repeats
@@ -751,6 +795,8 @@ class PermutationImportanceWrapper(BaseEstimator, ClassifierMixin):
         self.n_jobs = n_jobs
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> "PermutationImportanceWrapper":
+        """Fit the wrapped estimator and expose permutation scores as importances."""
+        # RFECV needs an importance vector, so compute it after fitting the clone.
         self.estimator_ = clone(self.estimator)
         self.estimator_.fit(X, y)
         self.classes_ = np.unique(y)
@@ -765,40 +811,57 @@ class PermutationImportanceWrapper(BaseEstimator, ClassifierMixin):
             random_state=self.random_state,
             n_jobs=self.n_jobs,
         )
-        self.feature_importances_ = np.nan_to_num(perm.importances_mean, nan=0.0)
+        # permutation_importance returns a Bunch at runtime; item access avoids
+        # a Pylance false positive about its dynamically provided attributes.
+        importances_mean = np.asarray(perm["importances_mean"], dtype=np.float64)
+        self.feature_importances_ = np.nan_to_num(importances_mean, nan=0.0)
         _update_wrapper_fit_progress(1)
         return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:
+        """Delegate class prediction to the fitted wrapped estimator."""
         return self.estimator_.predict(X)
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        """Delegate probability prediction when the wrapped estimator supports it."""
         if not hasattr(self.estimator_, "predict_proba"):
             raise AttributeError("Wrapped estimator does not expose predict_proba.")
         return self.estimator_.predict_proba(X)
 
     def decision_function(self, X: np.ndarray) -> np.ndarray:
+        """Delegate decision scores when the wrapped estimator supports them."""
         if not hasattr(self.estimator_, "decision_function"):
             raise AttributeError("Wrapped estimator does not expose decision_function.")
         return self.estimator_.decision_function(X)
 
 
 def summarize_grid_search(search: GridSearchCV) -> tuple[dict[str, Any], pd.DataFrame]:
+    """Extract the winning metrics/parameters and complete CV table from a search."""
     cv_results_df = pd.DataFrame(search.cv_results_)
     best_idx = int(search.best_index_)
 
+    # pandas .loc is typed as a broad Scalar union. Cast each value through
+    # Any before float conversion because GridSearchCV scores are numeric here.
+    def result_as_float(column: str) -> float:
+        """Read a known numeric CV-result cell while isolating pandas' broad type."""
+        return float(cast(Any, cv_results_df.loc[best_idx, column]))
+
     summary = {
-        "refit_metric": str(search.refit),
+        # sklearn's generic GridSearchCV stub does not declare refit, even
+        # though every configured search instance provides it at runtime.
+        "refit_metric": str(getattr(search, "refit", "")),
         "best_score": float(search.best_score_),
         "best_params": search.best_params_,
-        "best_accuracy": float(cv_results_df.loc[best_idx, "mean_test_accuracy"]),
-        "best_f1_macro": float(cv_results_df.loc[best_idx, "mean_test_f1_macro"]),
-        "best_mcc": float(cv_results_df.loc[best_idx, "mean_test_mcc"]),
+        "best_accuracy": result_as_float("mean_test_accuracy"),
+        "best_f1_macro": result_as_float("mean_test_f1_macro"),
+        "best_mcc": result_as_float("mean_test_mcc"),
     }
     return summary, cv_results_df
 
 
 def _extract_final_estimator(model: Any) -> Any:
+    """Unwrap a fitted search or pipeline until its final classifier is reached."""
+    # Accept either a fitted search object or a pipeline/estimator directly.
     if hasattr(model, "best_estimator_"):
         model = model.best_estimator_
     if hasattr(model, "named_steps"):
@@ -822,10 +885,16 @@ def run_wrapper_rfecv(
     rfecv_n_jobs: int = 1,
     seed: int = 42,
 ) -> dict[str, Any]:
+    """Tune, recursively eliminate, retune, rank, and save features for one wrapper model.
+
+    The two searches intentionally occur before and after RFECV: feature removal
+    changes the best hyperparameters, so the selected subset must be tuned again.
+    """
     scoring = build_scoring_dict()
     tuning_cv = StratifiedKFold(n_splits=cv_splits, shuffle=True, random_state=seed)
     rfecv_cv = StratifiedKFold(n_splits=cv_splits, shuffle=True, random_state=seed)
 
+    # Tune on all features first so RFECV starts from the best model settings.
     initial_grid = GridSearchCV(
         estimator=clone(pipeline),
         param_grid=param_grid,
@@ -868,6 +937,7 @@ def run_wrapper_rfecv(
         n_jobs=1,
     )
 
+    # Use permutation importance because SVM-RBF and k-NN lack native coefficients.
     rfecv = RFECV(
         estimator=rfecv_estimator,
         step=rfecv_step,
@@ -883,9 +953,11 @@ def run_wrapper_rfecv(
         rfecv.fit(X, y)
     print(f"[Wrapper:{model_name}] RFECV completed.")
 
+    # RFECV's boolean mask maps the retained columns back to their names.
     selected_mask = rfecv.support_
     selected_features = [feature for feature, keep in zip(feature_names, selected_mask) if keep]
 
+    # Retune after feature elimination; optimal hyperparameters can change.
     final_grid = GridSearchCV(
         estimator=clone(pipeline),
         param_grid=param_grid,
@@ -914,9 +986,10 @@ def run_wrapper_rfecv(
         random_state=seed,
         n_jobs=1,
     )
+    final_importances = np.asarray(final_perm["importances_mean"], dtype=np.float64)
     selected_importance_map = {
         feature: importance
-        for feature, importance in zip(selected_features, final_perm.importances_mean)
+        for feature, importance in zip(selected_features, final_importances)
     }
 
     ranking_df = pd.DataFrame({
@@ -924,6 +997,7 @@ def run_wrapper_rfecv(
         "selected": selected_mask,
         "rfecv_rank": rfecv.ranking_,
     })
+    # Unselected columns have no final permutation score and sort after retained ones.
     ranking_df["selected_subset_importance"] = ranking_df["feature"].map(selected_importance_map)
     sort_key = ranking_df["selected_subset_importance"].fillna(-np.inf)
     ranking_df = (
@@ -949,6 +1023,7 @@ def run_wrapper_rfecv(
             index=False,
         )
 
+        # Save the elimination curve when the installed sklearn version exposes it.
         if hasattr(rfecv, "cv_results_"):
             rfecv_curve_df = pd.DataFrame(rfecv.cv_results_)
             rfecv_curve_df.to_csv(save_path / f"{model_name}_rfecv_curve.csv", index=False)
@@ -995,9 +1070,11 @@ def run_embedded_feature_importance(
     grid_n_jobs: int = -1,
     seed: int = 42,
 ) -> dict[str, Any]:
+    """Tune one importance-bearing model, rank its native importances, and save outputs."""
     scoring = build_scoring_dict()
     cv = StratifiedKFold(n_splits=cv_splits, shuffle=True, random_state=seed)
 
+    # Train the tuned model, then read its built-in tree-based importances.
     grid = GridSearchCV(
         estimator=clone(pipeline),
         param_grid=param_grid,
@@ -1009,6 +1086,7 @@ def run_embedded_feature_importance(
     )
     grid.fit(X, y)
 
+    # Pipelines keep the importance-bearing classifier as their final step.
     final_estimator = _extract_final_estimator(grid)
     if not hasattr(final_estimator, "feature_importances_"):
         raise ValueError(f"{model_name} does not expose feature_importances_.")

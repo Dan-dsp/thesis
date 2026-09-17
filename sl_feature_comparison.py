@@ -44,6 +44,7 @@ from sl_feature_comparison_tools import (
 )
 
 
+# Shared settings keep ranking comparisons reproducible and computationally bounded.
 SEED = 42
 PCA_COMPONENTS = 3
 CV_FOLDS = 5
@@ -68,7 +69,11 @@ def compare_filter_method_rankings(
     """
     Compare filter rankings using top-100 lists, then derive top-80 and top-50
     by slicing the ordered top-100 consensus list.
+
+    The consensus combines vote count, Borda score, and mean present rank so a
+    feature is rewarded for both repeated selection and a strong position.
     """
+    # Normalize each filter result to a common feature/score schema.
     method_frames = {
         "anova": anova_df[["feature", "F_score"]].rename(columns={"F_score": "score"}),
         "fisher": fisher_df[["feature", "fisher_score"]].rename(columns={"fisher_score": "score"}),
@@ -107,6 +112,7 @@ def compare_filter_method_rankings(
             top_reference[["feature", "score"]].rename(columns={"score": f"score_{method_name}"})
         )
 
+    # Outer joins retain a feature even when only one method selected it.
     consensus_df = rank_frames[0]
     for frame in rank_frames[1:]:
         consensus_df = consensus_df.merge(frame, on="feature", how="outer")
@@ -117,6 +123,7 @@ def compare_filter_method_rankings(
     consensus_df["vote_count"] = consensus_df[rank_cols].notna().sum(axis=1)
     consensus_df["majority_vote"] = consensus_df["vote_count"] >= majority_threshold
     consensus_df["rank_mean_present"] = consensus_df[rank_cols].mean(axis=1, skipna=True)
+    # Borda points reward a feature for appearing high in multiple rankings.
     consensus_df["borda_score"] = (
         consensus_df[rank_cols]
         .apply(lambda col: np.where(col.notna(), top_k + 1 - col, 0))
@@ -129,6 +136,7 @@ def compare_filter_method_rankings(
 
     overlap_rows: list[dict[str, Any]] = []
     method_names = list(method_frames.keys())
+    # Set comparison avoids counting duplicate feature names within a method.
     top_sets = {
         method_name: set(method_top_slices[method_name][top_k]["feature"])
         for method_name in method_names
@@ -147,6 +155,7 @@ def compare_filter_method_rankings(
     pairwise_overlap_df = pd.DataFrame(overlap_rows)
 
     consensus_slices: dict[int, pd.DataFrame]
+    # Persist the full consensus plus reusable top-k slices when requested.
     if comparison_dir is not None:
         consensus_slices = save_top_ranked_feature_slices(
             consensus_df,
@@ -178,9 +187,11 @@ def compare_stage_feature_lists(
     stage_feature_lists: dict[str, list[str]],
     save_dir: str | Path | None = None,
 ) -> pd.DataFrame:
+    """Measure pairwise feature-list agreement between filter, wrapper, and embedded stages."""
     rows: list[dict[str, Any]] = []
     stage_names = list(stage_feature_lists.keys())
 
+    # Pairwise Jaccard overlap shows agreement between selection families.
     for idx, left_name in enumerate(stage_names):
         left_set = set(stage_feature_lists[left_name])
         for right_name in stage_names[idx + 1:]:
@@ -216,12 +227,14 @@ def run_final_selection_diagnostics(
     feature_lists: dict[str, list[str]],
     save_dir: str | Path | None = None,
 ) -> None:
+    """Save correlation heatmaps and class-wise violin plots for selected feature lists."""
     if save_dir is None:
         return
 
     root_dir = ensure_dir(save_dir)
 
     for list_name, features in feature_lists.items():
+        # Ignore stale rankings gracefully if a source dataset has changed.
         valid_features = [feature for feature in features if feature in df.columns]
         if not valid_features:
             continue
@@ -232,6 +245,7 @@ def run_final_selection_diagnostics(
             index=False,
         )
 
+        # Diagnostics reveal redundancy and class separation in the final lists.
         plot_correlation_matrix(
             df,
             valid_features,
@@ -256,20 +270,30 @@ def export_training_ready_feature_datasets(
     embedded_results: dict[str, dict[str, Any]],
     save_dir: str | Path,
 ) -> pd.DataFrame:
+    """Export every requested feature-set variant and return its training manifest.
+
+    Each export retains metadata, the class label, and split assignment so it
+    remains compatible with the training pipeline without manual reconstruction.
+    """
     export_root = ensure_dir(save_dir)
     manifest_rows: list[dict[str, Any]] = []
 
     def extract_features(feature_df: pd.DataFrame) -> list[str]:
+        """Read ordered feature names from one ranking table."""
         if "feature" not in feature_df.columns:
             raise ValueError("Expected a 'feature' column when exporting ranked feature datasets.")
-        return feature_df["feature"].dropna().astype(str).tolist()
+        # Convert each value explicitly so the result is guaranteed to match
+        # this helper's list[str] contract (and is clear to Pylance).
+        return [str(feature) for feature in feature_df["feature"].dropna().tolist()]
 
+    # Keep this nested helper so every method writes datasets with identical metadata.
     def export_feature_list(
         family: str,
         method_name: str,
         variant: str,
         selected_features: list[str],
     ) -> None:
+        """Export one non-empty feature list and append its details to the manifest."""
         if not selected_features:
             return
 
@@ -289,6 +313,7 @@ def export_training_ready_feature_datasets(
             "csv_path": export_info["csv_path"],
         })
 
+    # Export every ranking variant so training can compare selection sizes fairly.
     for method_name, slices in filter_comparison["method_top_slices"].items():
         for top_k, feature_df in sorted(slices.items(), reverse=True):
             export_feature_list(
@@ -335,6 +360,7 @@ def export_training_ready_feature_datasets(
         ["family", "method_name", "variant"],
         ignore_index=True,
     )
+    # The manifest is the input to batch training in sl_training_pipeline.py.
     manifest_df.to_csv(export_root / "training_ready_dataset_manifest.csv", index=False)
     return manifest_df
 
@@ -344,7 +370,14 @@ def run_feature_comparison_workflow(
     save_dir: str,
     label_col: str = "species",
 ) -> None:
+    """Run the complete reproducible feature-analysis and selection workflow.
+
+    It performs exploratory checks, independent filters, model-based wrappers,
+    embedded importance ranking, agreement diagnostics, and CSV exports for
+    downstream batch training.
+    """
     save_path = ensure_dir(save_dir)
+    # Separate artifacts by analysis family to keep a large experiment navigable.
     output_dirs = {
         "exploratory": save_path / "exploratory",
         "filters": save_path / "filters",
@@ -354,12 +387,16 @@ def run_feature_comparison_workflow(
         "diagnostics": save_path / "diagnostics",
         "training_ready_datasets": save_path / "training_ready_datasets",
     }
+    # Create all destinations before work starts, so individual helpers only
+    # need to write their own artifacts.
     for path in output_dirs.values():
         ensure_dir(path)
 
+    # Load once; filters use raw labels while sklearn wrapper/embedded models use integers.
     df, X, y_raw, feature_names = load_features_and_labels(csv_path, label_col=label_col)
     y_encoded, _ = encode_labels(y_raw)
 
+    # Model spaces define both the estimators and their searched settings.
     wrapper_spaces = build_wrapper_model_spaces(seed=SEED)
     embedded_spaces = build_embedded_model_spaces(
         seed=SEED,
@@ -367,9 +404,11 @@ def run_feature_comparison_workflow(
         xgb_n_jobs=XGB_N_JOBS,
     )
 
+    # Keep the progress bar aligned with the high-level workflow phases.
     task_total = 2 + len(wrapper_spaces) + len(embedded_spaces) + 3
     progress = tqdm(total=task_total, desc="Feature comparison workflow", unit="stage")
 
+    # Exploratory checks are informational and do not remove features themselves.
     shapiro_df = run_shapiro_tests(
         df,
         feature_names,
@@ -396,6 +435,7 @@ def run_feature_comparison_workflow(
         "comparison": output_dirs["filters"] / "comparison",
     }
 
+    # Filters rank each feature independently using complementary criteria.
     anova_df = compute_anova_scores(X, y_raw, feature_names, save_dir=filter_dirs["anova"])
     fisher_df = compute_fisher_scores(X, y_raw, feature_names, save_dir=filter_dirs["fisher"])
     mi_df = compute_mutual_information(
@@ -404,6 +444,7 @@ def run_feature_comparison_workflow(
         feature_names,
         save_dir=filter_dirs["mutual_information"],
     )
+    # PCA is used as a ranking lens; it does not transform the model-training CSVs.
     pca, loadings_df = run_pca_analysis(
         X,
         feature_names,
@@ -416,6 +457,7 @@ def run_feature_comparison_workflow(
         save_dir=filter_dirs["pca"],
     )
 
+    # Combine independent rankings into a transparent voting-based consensus.
     filter_comparison = compare_filter_method_rankings(
         anova_df,
         fisher_df,
@@ -438,6 +480,7 @@ def run_feature_comparison_workflow(
     )
     progress.update(1)
 
+    # Wrappers score subsets through cross-validated model performance.
     wrapper_results: dict[str, dict[str, Any]] = {}
     for model_name, (pipeline, param_grid) in wrapper_spaces.items():
         print(f"\n[Wrapper:{model_name}] Starting wrapper selection.")
@@ -457,6 +500,7 @@ def run_feature_comparison_workflow(
             rfecv_n_jobs=RFECV_N_JOBS,
             seed=SEED,
         )
+        # Retain full result objects because later stages need selected/ranked names.
         wrapper_results[model_name] = wrapper_result
         print(
             f"\n[Wrapper:{model_name}] Selected {len(wrapper_result['selected_features'])} features. "
@@ -464,6 +508,7 @@ def run_feature_comparison_workflow(
         )
         progress.update(1)
 
+    # Embedded tree models rank features during model fitting.
     embedded_results: dict[str, dict[str, Any]] = {}
     for model_name, (pipeline, param_grid) in embedded_spaces.items():
         embedded_result = run_embedded_feature_importance(
@@ -479,6 +524,7 @@ def run_feature_comparison_workflow(
             grid_n_jobs=GRIDSEARCH_N_JOBS,
             seed=SEED,
         )
+        # Keep ranking tables for overlap analysis and CSV generation below.
         embedded_results[model_name] = embedded_result
         print(
             f"\n[Embedded:{model_name}] Top feature: "
@@ -486,6 +532,7 @@ def run_feature_comparison_workflow(
         )
         progress.update(1)
 
+    # Compare the principal output from each selection approach.
     primary_stage_lists = {
         "filters_consensus_top_100": filter_comparison["consensus_slices"][DEFAULT_TOP_K][
             "feature"
@@ -508,6 +555,7 @@ def run_feature_comparison_workflow(
     print(f"\n[Stage Comparison] Saved {len(stage_overlap_df)} pairwise overlap rows.")
     progress.update(1)
 
+    # Plot the more compact top-50 lists for readable diagnostic figures.
     diagnostic_feature_lists = {
         "filters_consensus_top_50": filter_comparison["consensus_slices"][50]["feature"].tolist(),
         "svm_rbf_selected": wrapper_results["svm_rbf"]["selected_features"],
@@ -530,6 +578,7 @@ def run_feature_comparison_workflow(
     print("[Diagnostics] Saved final correlation matrices and violin plots.")
     progress.update(1)
 
+    # Each saved CSV keeps metadata/split columns required by the trainer.
     exported_training_datasets_df = export_training_ready_feature_datasets(
         df,
         label_col,
@@ -545,6 +594,7 @@ def run_feature_comparison_workflow(
     )
     progress.update(1)
 
+    # Save compact run metadata in addition to the detailed CSV artifacts.
     workflow_summary = {
         "csv_path": csv_path,
         "label_col": label_col,
@@ -568,6 +618,8 @@ def run_feature_comparison_workflow(
 
 
 def main() -> None:
+    """Run the workflow with this project's default full-feature CSV and output folder."""
+    # Default standalone entry point used by the pipeline orchestrator.
     csv_path = r"F:/01_Univalle/01_TG/dataset_features/shallow_learning_birds.csv"
     save_dir = r"F:/01_Univalle/01_TG/sl_results"
     run_feature_comparison_workflow(csv_path, save_dir, label_col="species")
