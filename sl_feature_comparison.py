@@ -409,6 +409,8 @@ def run_feature_comparison_workflow(
     progress = tqdm(total=task_total, desc="Feature comparison workflow", unit="stage")
 
     # Exploratory checks are informational and do not remove features themselves.
+    # Check exploratory/shapiro/shapiro_normality.csv after this stage: a True
+    # gaussian_at_alpha flag means normality was not rejected at alpha=0.05.
     shapiro_df = run_shapiro_tests(
         df,
         feature_names,
@@ -436,6 +438,8 @@ def run_feature_comparison_workflow(
     }
 
     # Filters rank each feature independently using complementary criteria.
+    # ANOVA and Fisher are scale-invariant; mutual information performs its own
+    # continuous-feature scaling internally, so X is passed unchanged here.
     anova_df = compute_anova_scores(X, y_raw, feature_names, save_dir=filter_dirs["anova"])
     fisher_df = compute_fisher_scores(X, y_raw, feature_names, save_dir=filter_dirs["fisher"])
     mi_df = compute_mutual_information(
@@ -444,7 +448,8 @@ def run_feature_comparison_workflow(
         feature_names,
         save_dir=filter_dirs["mutual_information"],
     )
-    # PCA is used as a ranking lens; it does not transform the model-training CSVs.
+    # PCA is used as a ranking lens; it standardizes internally because PCA is
+    # scale-sensitive, but it does not transform the model-training CSVs.
     pca, loadings_df = run_pca_analysis(
         X,
         feature_names,

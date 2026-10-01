@@ -327,6 +327,11 @@ def run_shapiro_tests(
     Shapiro is common and appropriate here, but its p-value becomes less precise
     for very large samples. When a feature has more than `max_samples` values,
     a deterministic subsample is used.
+
+    ``gaussian_at_alpha`` is True when ``p_value >= alpha``. More precisely,
+    this means the test did *not* find enough evidence to reject normality at
+    the chosen alpha; it does not prove that a feature is perfectly Gaussian.
+    The saved CSV is the place to inspect this result for every feature.
     """
     # Sampling makes the normality test practical without changing its purpose.
     rng = np.random.default_rng(random_state)
@@ -366,6 +371,8 @@ def run_shapiro_tests(
             "was_subsampled": bool(was_subsampled),
             "shapiro_W": w_stat,
             "p_value": p_value,
+            # A high p-value means "normality was not rejected", not "normality
+            # was proven". Keep the p-value for a more informative inspection.
             "gaussian_at_alpha": bool(pd.notna(p_value) and p_value >= alpha),
             "notes": note,
         })
@@ -397,6 +404,8 @@ def compute_anova_scores(
 ) -> pd.DataFrame:
     """Rank features independently with one-way ANOVA F-scores and p-values."""
     # ANOVA measures whether a feature mean differs across species classes.
+    # Its F-score is unchanged by ordinary per-feature centering/scaling, so
+    # standardizing X before this ranking is unnecessary.
     f_scores, p_values = f_classif(X, y)
     result = pd.DataFrame({
         "feature": feature_names,
@@ -435,6 +444,8 @@ def compute_fisher_scores(
 
     fisher_scores = np.zeros(n_features, dtype=np.float64)
     # Fisher's ratio favors high between-class variation and low within-class variation.
+    # Both variances scale by the same squared factor, so this score is also
+    # unaffected by ordinary per-feature standardization.
     for j in tqdm(range(n_features), desc="Fisher per feature", leave=False):
         xj = X[:, j]
         mu = xj.mean()
@@ -483,6 +494,8 @@ def compute_mutual_information(
 ) -> pd.DataFrame:
     """Estimate the non-linear information each continuous feature carries about labels."""
     # Mutual information can capture relationships that are not linear.
+    # sklearn scales continuous columns internally for this k-neighbor estimate,
+    # so this helper intentionally does not fit another external scaler.
     mi = mutual_info_classif(X, y, discrete_features=False, random_state=42)
     result = pd.DataFrame({
         "feature": feature_names,
@@ -518,6 +531,8 @@ def run_pca_analysis(
     if standardize:
         scaler = StandardScaler()
         # PCA is scale-sensitive, so standardization is normally required.
+        # This scaling is used only to calculate PCA loadings; it does not
+        # overwrite X or alter the training-ready feature CSVs.
         X_proc = scaler.fit_transform(X_proc)
 
     n_components = min(n_components, X_proc.shape[1])
@@ -687,6 +702,9 @@ def plot_correlation_matrix(
 def build_wrapper_model_spaces(seed: int = 42) -> dict[str, tuple[Pipeline, dict[str, list[Any]]]]:
     """Return scaled SVM/k-NN pipelines and their hyperparameter grids for RFECV."""
     # Wrapper methods repeatedly fit these pipelines while RFECV removes features.
+    # SVM-RBF relies on distances between samples. Keeping the scaler inside
+    # the pipeline fits its mean/std on each CV training fold only, preventing
+    # validation-fold leakage during GridSearchCV and RFECV.
     svm_pipe = Pipeline(
         [
             ("scaler", StandardScaler()),
@@ -698,6 +716,8 @@ def build_wrapper_model_spaces(seed: int = 42) -> dict[str, tuple[Pipeline, dict
         "clf__gamma": ["scale", 0.1, 0.01, 0.001],
     }
 
+    # k-NN is likewise distance-based, so unscaled large-range features could
+    # dominate its neighbor search. The pipeline applies fold-safe scaling.
     knn_pipe = Pipeline(
         [
             ("scaler", StandardScaler()),
@@ -726,6 +746,8 @@ def build_embedded_model_spaces(
     # Embedded models supply their own native feature-importance values.
     spaces: dict[str, tuple[Pipeline, dict[str, list[Any]]]] = {}
 
+    # Tree split thresholds use one feature at a time; rescaling does not alter
+    # the available partitions, so Random Forest does not need a scaler.
     rf_pipe = Pipeline(
         [
             ("clf", RandomForestClassifier(random_state=seed, n_jobs=tree_model_n_jobs)),
@@ -742,6 +764,7 @@ def build_embedded_model_spaces(
     try:
         from xgboost import XGBClassifier
 
+        # XGBoost is also tree-based and therefore does not require scaling.
         xgb_pipe = Pipeline(
             [
                 (

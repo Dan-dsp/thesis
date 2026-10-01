@@ -452,6 +452,8 @@ def make_model_spaces(
     spaces: Dict[str, Tuple[Pipeline, Dict[str, list]]] = {}
 
     # Scaling is required for distance- and margin-based models, but not trees.
+    # Each scaler remains inside its pipeline, so GridSearchCV learns scaling
+    # values using only the training portion of each cross-validation fold.
     svm_pipe = Pipeline(
         [
             ("scaler", StandardScaler()),
@@ -464,6 +466,8 @@ def make_model_spaces(
     }
     spaces["svm_rbf"] = (svm_pipe, svm_grid)
 
+    # Tree models compare a feature to thresholds; their splits are unchanged
+    # by linear rescaling, so Random Forest does not need StandardScaler.
     rf_pipe = Pipeline(
         [
             ("clf", RandomForestClassifier(random_state=seed, n_jobs=tree_model_n_jobs)),
@@ -495,6 +499,7 @@ def make_model_spaces(
     try:
         from xgboost import XGBClassifier
 
+        # XGBoost is tree-based as well, so scaling is intentionally omitted.
         xgb_pipe = Pipeline(
             [
                 (
