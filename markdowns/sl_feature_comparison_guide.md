@@ -29,12 +29,14 @@ The goal is not just to score features once, but to compare several selection st
 
 ### 1. Exploratory stage
 
-The script first loads the dataset and runs:
+The script loads the complete dataset but uses only rows with split == train for every learned calculation below. Rows marked test remain in the exported training-ready CSVs, but their feature values and species labels never influence feature ranking, selection, diagnostics, or PCA.
+
+The training rows are used for:
 
 - Shapiro-Wilk normality test
 - correlation matrix
 
-This gives a quick statistical and redundancy check before feature selection starts.
+This gives a training-data-only statistical and redundancy check before feature selection starts.
 
 ### 2. Filter stage
 
@@ -65,7 +67,7 @@ The orchestrator then runs RFECV-based wrapper selection for:
 - SVM with RBF kernel
 - k-NN
 
-These wrapper runs use:
+These wrapper runs use the training rows and:
 
 - the **full feature space**
 - one initial hyperparameter tuning pass on the full feature space
@@ -133,7 +135,7 @@ The orchestrator runs embedded importance-based selection for:
 - Random Forest
 - XGBoost, when available
 
-For each embedded model, it saves:
+For each embedded model, fitted on the training rows, it saves:
 
 - the full importance ranking
 - top-100
@@ -157,7 +159,7 @@ It saves overlap counts and Jaccard similarities so you can see how much agreeme
 
 ### 6. Final diagnostics
 
-At the end, the script checks selected lists again using:
+At the end, the script checks the selected lists again using training rows:
 
 - correlation matrices
 - violin plots
@@ -175,7 +177,7 @@ Each exported CSV keeps:
 - sample metadata columns when they exist
 - only the selected feature columns for that method or feature family
 
-This means you no longer need to manually reconstruct a reduced dataset before training.
+The selected feature list is then applied unchanged to both train and test rows. This means the training pipeline can evaluate each variant on a test set that was not used for feature selection, and you do not need to manually reconstruct a reduced dataset before training.
 
 ## Main Functions
 

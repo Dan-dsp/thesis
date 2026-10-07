@@ -633,7 +633,7 @@ def run_training_pipeline(
     scoring: str = "f1_macro",
     val_fraction: float = 0.2,
     gridsearch_n_jobs: int = -1,
-    gridsearch_pre_dispatch: str = "2*n_jobs",
+    gridsearch_pre_dispatch: str = "n_jobs",
     gridsearch_verbose: int = 0,
     tree_model_n_jobs: int = 1,
     xgb_n_jobs: int = 1,
@@ -715,6 +715,7 @@ def run_training_pipeline(
                 "internal_val_fraction": val_fraction,
                 "gridsearch_n_jobs": gridsearch_n_jobs,
                 "gridsearch_pre_dispatch": gridsearch_pre_dispatch,
+                "gridsearch_backend": "threading",
                 "tree_model_n_jobs": tree_model_n_jobs,
                 "xgb_n_jobs": xgb_n_jobs,
             },
@@ -768,25 +769,39 @@ def run_training_pipeline(
         print(f"[INFO] Grid candidates:    {n_candidates}")
         print(f"[INFO] Expected CV fits:  {total_cv_fits}")
 
-        # Refit=True leaves the best cross-validated estimator ready for validation.
+        # SVC probabilities require an extra internal CV during every fit. The
+        # search scores class predictions, so calibrate only the chosen SVC.
+        search_pipe = pipe
+        refit_search = model_name != "svm_rbf" or scoring != "f1_macro"
+        if not refit_search:
+            search_pipe = clone(pipe).set_params(clf__probability=False)
+
         gs = GridSearchCV(
-            estimator=pipe,
+            estimator=search_pipe,
             param_grid=grid,
             scoring=scoring,
             cv=cv,
             n_jobs=gridsearch_n_jobs,
             pre_dispatch=gridsearch_pre_dispatch,
-            refit=True,
+            refit=refit_search,
             error_score="raise",
             verbose=gridsearch_verbose,
         )
-        with tqdm_joblib(total=total_cv_fits, desc=f"{model_name} CV") as progress_bar:
-            gs.fit(X_train, y_train)
-            if progress_bar is not None:
-                progress_bar.set_postfix_str("refit")
+        # Threads share the feature matrix across fits instead of copying it
+        # into separate worker processes for every candidate and fold.
+        with joblib.parallel_backend("threading"):
+            with tqdm_joblib(total=total_cv_fits, desc=f"{model_name} CV") as progress_bar:
+                gs.fit(X_train, y_train)
+                if progress_bar is not None:
+                    progress_bar.set_postfix_str("refit")
+
+        if refit_search:
+            best_model = gs.best_estimator_
+        else:
+            best_model = clone(pipe).set_params(**gs.best_params_)
+            best_model.fit(X_train, y_train)
         tuning_elapsed = time.perf_counter() - model_stage_start
 
-        best_model = gs.best_estimator_
         best_models_train[model_name] = best_model
         best_params[model_name] = gs.best_params_
 
@@ -939,7 +954,7 @@ def run_training_pipeline_batch(
     scoring: str = "f1_macro",
     val_fraction: float = 0.2,
     gridsearch_n_jobs: int = -1,
-    gridsearch_pre_dispatch: str = "2*n_jobs",
+    gridsearch_pre_dispatch: str = "n_jobs",
     gridsearch_verbose: int = 0,
     tree_model_n_jobs: int = 1,
     xgb_n_jobs: int = 1,

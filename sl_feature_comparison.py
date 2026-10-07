@@ -55,6 +55,7 @@ RFECV_N_JOBS = 1
 WRAPPER_RFECV_STEP = 10
 TREE_MODEL_N_JOBS = 1
 XGB_N_JOBS = 1
+SELECTION_SPLIT = "train"
 
 
 def compare_filter_method_rankings(
@@ -392,9 +393,20 @@ def run_feature_comparison_workflow(
     for path in output_dirs.values():
         ensure_dir(path)
 
-    # Load once; filters use raw labels while sklearn wrapper/embedded models use integers.
-    df, X, y_raw, feature_names = load_features_and_labels(csv_path, label_col=label_col)
+    # Feature selection must not see held-out test rows or their labels.
+    # Keep the full dataframe only for exporting the train/test-ready CSVs.
+    df, X, y_raw, feature_names = load_features_and_labels(
+        csv_path,
+        label_col=label_col,
+        selection_split=SELECTION_SPLIT,
+    )
+    selection_df = df.loc[df["split"].eq(SELECTION_SPLIT)].copy()
     y_encoded, _ = encode_labels(y_raw)
+    test_rows_excluded = int(df["split"].eq("test").sum())
+    print(
+        f"[Selection] Using {len(selection_df)} '{SELECTION_SPLIT}' rows only; "
+        f"excluded {test_rows_excluded} held-out test rows."
+    )
 
     # Model spaces define both the estimators and their searched settings.
     wrapper_spaces = build_wrapper_model_spaces(seed=SEED)
@@ -412,12 +424,12 @@ def run_feature_comparison_workflow(
     # Check exploratory/shapiro/shapiro_normality.csv after this stage: a True
     # gaussian_at_alpha flag means normality was not rejected at alpha=0.05.
     shapiro_df = run_shapiro_tests(
-        df,
+        selection_df,
         feature_names,
         save_dir=output_dirs["exploratory"] / "shapiro",
     )
     correlation_df = plot_correlation_matrix(
-        df,
+        selection_df,
         feature_names,
         save_dir=output_dirs["exploratory"] / "correlation",
         file_stem="global_feature_correlation",
@@ -575,7 +587,7 @@ def run_feature_comparison_workflow(
         ][50]["feature"].tolist()
 
     run_final_selection_diagnostics(
-        df,
+        selection_df,
         label_col,
         diagnostic_feature_lists,
         save_dir=output_dirs["diagnostics"],
@@ -603,7 +615,10 @@ def run_feature_comparison_workflow(
     workflow_summary = {
         "csv_path": csv_path,
         "label_col": label_col,
-        "n_samples": int(df.shape[0]),
+        "n_samples_total": int(df.shape[0]),
+        "selection_split": SELECTION_SPLIT,
+        "n_selection_samples": int(selection_df.shape[0]),
+        "n_test_samples_excluded_from_selection": test_rows_excluded,
         "n_features": int(len(feature_names)),
         "filter_majority_count": int(filter_comparison["consensus_df"]["majority_vote"].sum()),
         "svm_selected_count": int(len(wrapper_results["svm_rbf"]["selected_features"])),

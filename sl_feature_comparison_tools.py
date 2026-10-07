@@ -224,9 +224,14 @@ def export_training_ready_dataset(
 def load_features_and_labels(
     csv_path: str,
     label_col: str = "species",
+    selection_split: str | None = None,
 ) -> tuple[pd.DataFrame, np.ndarray, np.ndarray, list[str]]:
     """
-    Load the dataset and return the cleaned numeric matrix plus labels.
+    Load the dataset and return a cleaned feature matrix plus labels.
+
+    When selection_split is provided, only rows with that split are used to
+    fit feature-selection methods. The returned dataframe still contains every
+    row so selected columns can later be exported for train and test.
     """
     df = pd.read_csv(csv_path)
     feature_names = get_feature_columns(df, label_col=label_col)
@@ -239,8 +244,21 @@ def load_features_and_labels(
     if label_col not in df.columns:
         raise ValueError(f"Label column '{label_col}' not found in dataset.")
 
+    selection_df = df
+    if selection_split is not None:
+        if "split" not in df.columns:
+            raise ValueError(
+                "The dataset must include a 'split' column when selecting a split."
+            )
+        selection_mask = df["split"].eq(selection_split)
+        if not selection_mask.any():
+            raise ValueError(
+                f"No rows with split='{selection_split}' were found for feature selection."
+            )
+        selection_df = df.loc[selection_mask].copy()
+
     # Coerce invalid entries to NaN, then replace infinities before imputation.
-    feature_df = df[feature_names].apply(pd.to_numeric, errors="coerce")
+    feature_df = selection_df[feature_names].apply(pd.to_numeric, errors="coerce")
     feature_df = feature_df.replace([np.inf, -np.inf], np.nan)
 
     missing_total = int(feature_df.isna().sum().sum())
@@ -261,7 +279,7 @@ def load_features_and_labels(
     else:
         X = feature_df.to_numpy(dtype=np.float64, copy=True)
 
-    y = df[label_col].to_numpy()
+    y = selection_df[label_col].to_numpy()
     return df, np.asarray(X, dtype=np.float64), y, feature_names
 
 
@@ -708,7 +726,7 @@ def build_wrapper_model_spaces(seed: int = 42) -> dict[str, tuple[Pipeline, dict
     svm_pipe = Pipeline(
         [
             ("scaler", StandardScaler()),
-            ("clf", SVC(kernel="rbf", probability=True, random_state=seed)),
+            ("clf", SVC(kernel="rbf", probability=False, random_state=seed)),
         ]
     )
     svm_grid = {
