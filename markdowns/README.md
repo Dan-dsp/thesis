@@ -4,6 +4,8 @@ This folder contains the documentation for the top-level scripts in `01_Python`.
 
 ## Documentation map
 
+- [Thesis Evaluation Protocol](thesis_evaluation_protocol.md) explains selected features, separate family analyses, outer-CV statistics, error inspection and rejection.
+
 - `INDEX.md` lists every documented Python file and its pipeline role.
 - `sl_pipeline_overview.md` explains the current shallow-learning workflow in depth.
 - `*_guide.md` files are the existing detailed shallow-learning guides.

@@ -31,6 +31,7 @@ from sl_feature_comparison_tools import (
     encode_labels,
     ensure_dir,
     export_training_ready_dataset,
+    get_feature_columns,
     load_features_and_labels,
     plot_correlation_matrix,
     plot_violin_for_features,
@@ -297,6 +298,9 @@ def export_training_ready_feature_datasets(
         """Export one non-empty feature list and append its details to the manifest."""
         if not selected_features:
             return
+        if len(selected_features) >= len(get_feature_columns(df, label_col)):
+            print(f"[Export] Skipping {method_name}/{variant}: no dimensionality reduction.")
+            return
 
         output_path = export_root / family / method_name / f"{method_name}_{variant}_training.csv"
         export_info = export_training_ready_dataset(
@@ -309,6 +313,8 @@ def export_training_ready_feature_datasets(
             "family": family,
             "method_name": method_name,
             "variant": variant,
+            "selection_split": SELECTION_SPLIT,
+            "selection_protocol": "train_only_v1",
             "n_features": export_info["n_features"],
             "n_rows": export_info["n_rows"],
             "csv_path": export_info["csv_path"],

@@ -29,6 +29,9 @@ from typing import Any, Dict, Tuple
 import joblib
 import numpy as np
 import pandas as pd
+from classification_analysis import (
+    choose_rejection_policy, describe_sl_model, save_json, save_prediction_audit, sl_predictions,
+)
 
 from sklearn.base import clone
 from sklearn.model_selection import (
@@ -56,8 +59,8 @@ except ImportError:
     tqdm = None
 
 
-# Default inputs/outputs for a single full-feature training run.
-DEFAULT_DATA_CSV_PATH = r"F:/01_Univalle/01_TG/dataset_features/shallow_learning_birds.csv"
+# Default inputs/outputs for a single selected-feature training run.
+DEFAULT_DATA_CSV_PATH = r"F:/01_Univalle/01_TG/sl_results/training_ready_datasets/filters/consensus/consensus_top_50_training.csv"
 DEFAULT_OUT_DIR = Path(r"F:/01_Univalle/01_TG/sl_outputs")
 DEFAULT_TRAINING_READY_MANIFEST_PATH = Path(
     r"F:/01_Univalle/01_TG/sl_results/training_ready_datasets/training_ready_dataset_manifest.csv"
@@ -229,15 +232,20 @@ def load_training_ready_manifest(manifest_csv_path: str | Path) -> pd.DataFrame:
         )
 
     manifest_df = pd.read_csv(manifest_path)
-    required_columns = {"family", "method_name", "variant", "csv_path"}
+    required_columns = {"family", "method_name", "variant", "csv_path",
+                        "selection_split", "selection_protocol"}
     missing_columns = required_columns - set(manifest_df.columns)
     if missing_columns:
         missing_text = ", ".join(sorted(missing_columns))
         raise ValueError(
-            f"Manifest is missing required columns: {missing_text}"
+            f"Manifest is missing required columns: {missing_text}. "
+            "Regenerate exports with sl_feature_comparison.py."
         )
     if manifest_df.empty:
         raise ValueError(f"Manifest has no dataset rows: {manifest_path}")
+    if not (manifest_df.selection_split.eq("train") &
+            manifest_df.selection_protocol.eq("train_only_v1")).all():
+        raise ValueError("Regenerate selected datasets with sl_feature_comparison.py first.")
 
     return manifest_df
 
@@ -308,6 +316,11 @@ def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42)
         raise ValueError(
             "No feature columns found. Expected descriptive feature names or legacy f-columns."
         )
+    original_csv = Path("F:/01_Univalle/01_TG/dataset_features/shallow_learning_birds.csv")
+    if original_csv.exists():
+        original_count = len(get_feature_columns(pd.read_csv(original_csv, nrows=5)))
+        if len(feature_cols) >= original_count:
+            raise ValueError("SL thesis training requires a reduced feature vector.")
     if "species" not in df.columns:
         raise ValueError("Missing required 'species' column.")
     if "split" not in df.columns:
@@ -413,7 +426,12 @@ def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42)
         "n_classes": int(len(class_names)),
     }
 
+    test_metadata = df.loc[test_mask, metadata_cols_present].reset_index(drop=True)
+    filenames = test_metadata.get("orig_filename", pd.Series(absolute_test_indices.astype(str)))
+    test_metadata["sample_key"] = test_metadata["species"].astype(str) + "/" + filenames.astype(str)
+
     return {
+        "test_metadata": test_metadata,
         "X_train": X_train,
         "y_train": y_train,
         "X_val": X_val,
@@ -645,6 +663,20 @@ def run_training_pipeline(
     The returned run directory contains all artifacts required to inspect it.
     """
     data_csv_path = str(data_csv_path)
+    ready_root = DEFAULT_TRAINING_READY_MANIFEST_PATH.parent.resolve()
+    try:
+        Path(data_csv_path).resolve().relative_to(ready_root)
+    except ValueError:
+        pass
+    else:
+        manifest = load_training_ready_manifest(DEFAULT_TRAINING_READY_MANIFEST_PATH)
+        registered = {Path(p).resolve() for p in manifest.csv_path}
+        if Path(data_csv_path).resolve() not in registered:
+            raise ValueError("This reduced CSV is not registered in the current selection manifest.")
+    if Path(data_csv_path).resolve() == Path(
+        "F:/01_Univalle/01_TG/dataset_features/shallow_learning_birds.csv"
+    ).resolve():
+        raise ValueError("Use a reduced feature CSV or --run-exported-batch for SL training.")
     out_dir = Path(out_dir)
     total_start = time.perf_counter()
     stage_timings = []
@@ -757,6 +789,7 @@ def run_training_pipeline(
     test_rows = []
     best_models_train = {}
     best_params = {}
+    rejection_policies = {}
 
     # Tune each candidate on internal-train data, then compare balanced validation scores.
     for model_name, (pipe, grid) in spaces.items():
@@ -804,6 +837,11 @@ def run_training_pipeline(
 
         best_models_train[model_name] = best_model
         best_params[model_name] = gs.best_params_
+        val_pred, val_confidence = sl_predictions(best_model, X_val)
+        rejection_policies[model_name] = choose_rejection_policy(y_val, val_pred, val_confidence)
+        # These are search diagnostics, not independent outer-CV evidence.
+        pd.DataFrame(gs.cv_results_).to_csv(
+            run_dir / f"{model_name}_grid_search.csv", index=False)
 
         print(f"[INFO] Best {model_name} params: {gs.best_params_}")
         print(f"[INFO] Best {model_name} CV {scoring}: {gs.best_score_:.4f}")
@@ -893,6 +931,20 @@ def run_training_pipeline(
 
         # This is the deployable model: trained on all permitted training rows.
         joblib.dump(final_model, models_dir / f"{model_name}_final.pkl")
+        raw_pred, confidence = sl_predictions(final_model, X_test)
+        save_prediction_audit(
+            run_dir / "predictions", "SL", model_name, data["test_metadata"],
+            label_encoder.inverse_transform(y_test), label_encoder.inverse_transform(raw_pred),
+            confidence, rejection_policies[model_name],
+        )
+        model_analysis = describe_sl_model(final_model, feature_cols)
+        model_analysis.update(
+            model_file_bytes=(models_dir / f"{model_name}_final.pkl").stat().st_size,
+            train_samples=len(X_train_full), test_samples=len(X_test), device="cpu",
+            full_train_refit_seconds=refit_elapsed,
+            gridsearch_jobs=gridsearch_n_jobs,
+        )
+        save_json(run_dir / f"{model_name}_model_analysis.json", model_analysis)
         test_eval_elapsed = time.perf_counter() - eval_stage_start
         total_model_elapsed = time.perf_counter() - model_stage_start
         print(f"[TIME] {model_name} refit_full_train: {format_seconds(refit_elapsed)}")
@@ -915,6 +967,13 @@ def run_training_pipeline(
 
     val_df.to_csv(run_dir / "internal_validation_comparison.csv", index=False)
     test_df.to_csv(run_dir / "test_comparison.csv", index=False)
+    selected_name = str(val_df.iloc[0]["model"])
+    save_json(run_dir / "selected_model.json", {
+        "family": "SL", "selected_by": "internal_validation_f1_macro",
+        "model": selected_name, "model_path": str(models_dir / f"{selected_name}_final.pkl"),
+        "rejection_policy": rejection_policies[selected_name],
+        "note": "The threshold was fitted before the final full-train refit; assess coverage drift.",
+    })
     with (run_dir / "best_params.json").open("w", encoding="utf-8") as f:
         json.dump(best_params, f, indent=2)
     stage_elapsed = time.perf_counter() - stage_start
@@ -1060,6 +1119,13 @@ def run_training_pipeline_batch(
     if test_tables:
         test_all_df = pd.concat(test_tables, ignore_index=True)
         test_all_df.to_csv(batch_run_dir / "batch_test_comparison.csv", index=False)
+        selected = validation_all_df.sort_values("val_f1_macro", ascending=False).iloc[0]
+        selection_path = Path(selected["run_dir"]) / "selected_model.json"
+        selection = json.loads(selection_path.read_text(encoding="utf-8"))
+        selection.update(dataset_family=selected["dataset_family"],
+                         dataset_method=selected["dataset_method_name"],
+                         dataset_variant=selected["dataset_variant"])
+        save_json(batch_run_dir / "selected_model.json", selection)
     else:
         test_all_df = pd.DataFrame()
 

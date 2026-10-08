@@ -1,7 +1,7 @@
 # `compare_dl_sl_models.py`
 
-Evaluates trained deep-learning and shallow-learning models on a comparable test set and writes a combined report. It is not called by either training pipeline; run it after both pipelines have produced their model artifacts.
+Evaluates saved classifiers into independent SL and DL reports. The compatibility filename remains, but the script no longer produces a joint ranking or a cross-family significance test.
 
-It loads ResNet18 checkpoints for DL and Joblib model runs plus their feature metadata for SL. The script can balance samples per class, calculates accuracy, macro precision/recall/F1 and confusion matrices, then saves tables and plots under its configured output directory.
+It loads ResNet18 checkpoints and reduced-feature SL models. SL defaults to the validation-selected run from the latest batch. Outputs are family_evaluation_results/sl and family_evaluation_results/dl. Metrics across families may only be described with their dataset and training context.
 
-Use the command-line options in `--help` to point it at the DL checkpoint, SL run directory, and dataset. It belongs to cross-pipeline evaluation, not dataset creation or training.
+Use --sl-run-dir to choose an explicit SL run, or --skip-sl / --skip-dl to evaluate one family. DL checkpoint paths remain configured in DL_MODELS. See [Thesis Evaluation Protocol](thesis_evaluation_protocol.md) for image errors, rejection and independent CV tests.

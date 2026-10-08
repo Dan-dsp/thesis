@@ -1,5 +1,5 @@
 """
-Compare the two ResNet-18 DL checkpoints and four SL models on their test sets.
+Evaluate ResNet-18 checkpoints and SL models in independent family reports.
 
 The script checks that:
 - all requested model files and test folders exist;
@@ -7,8 +7,8 @@ The script checks that:
 - SL model class names and feature columns match the saved run metadata;
 - each model can be loaded and has the expected prediction interface.
 
-It prints macro metrics and classification reports, and also saves a summary CSV
-plus one text report per model under comparison_results/.
+It saves macro metrics and classification reports separately for SL and DL.
+Cross-family performance statements are descriptive, without a pooled ranking.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ from torch.utils.data import DataLoader, Subset
 
 DL_TEST_DIR = Path(r"F:\01_Univalle\01_TG\dataset_bbox\test")
 SL_TEST_DIR = Path(r"F:\01_Univalle\01_TG\dataset_features\test")
-SL_RUN_DIR = Path(r"F:\01_Univalle\01_TG\sl_outputs\runs\run_20260619_005547")
+SL_BATCH_ROOT = Path(r"F:\01_Univalle\01_TG\sl_outputs_batch")
 
 DL_MODELS = {
     "resnet18_bbox_full_finetune": Path(
@@ -49,12 +49,7 @@ DL_MODELS = {
     ),
 }
 
-SL_MODELS = {
-    "knn": SL_RUN_DIR / "models" / "knn_final.pkl",
-    "random_forest": SL_RUN_DIR / "models" / "random_forest_final.pkl",
-    "svm_rbf": SL_RUN_DIR / "models" / "svm_rbf_final.pkl",
-    "xgboost": SL_RUN_DIR / "models" / "xgboost_final.pkl",
-}
+SL_MODEL_NAMES = ("knn", "random_forest", "svm_rbf", "xgboost")
 
 
 @dataclass
@@ -369,30 +364,36 @@ def print_result(result: EvalResult) -> None:
 def save_outputs(results: list[EvalResult], output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     summary = pd.DataFrame([result.as_row() for result in results])
-    summary = summary.sort_values(["f1_macro", "accuracy"], ascending=False)
-    summary.to_csv(output_dir / "summary_metrics.csv", index=False)
+    # Families have different training protocols: report each independently.
+    for family, table in summary.groupby("family"):
+        family_dir = output_dir / family.lower()
+        family_dir.mkdir(parents=True, exist_ok=True)
+        table.sort_values("model").to_csv(family_dir / "summary_metrics.csv", index=False)
 
     for result in results:
-        safe_name = f"{result.family.lower()}_{result.model}"
-        (output_dir / f"{safe_name}_classification_report.txt").write_text(
+        safe_name = result.model
+        family_dir = output_dir / result.family.lower()
+        (family_dir / f"{safe_name}_classification_report.txt").write_text(
             result.report_text,
             encoding="utf-8",
         )
         pd.DataFrame(result.confusion_matrix).to_csv(
-            output_dir / f"{safe_name}_confusion_matrix.csv",
+            family_dir / f"{safe_name}_confusion_matrix.csv",
             index=False,
         )
 
     print("\n" + "=" * 80)
-    print("Summary, sorted by F1 macro then accuracy")
+    print("Independent family reports; cross-family metrics are descriptive only")
     print("=" * 80)
-    print(summary.to_string(index=False, float_format=lambda value: f"{value:.4f}"))
+    for family, table in summary.groupby("family"):
+        print(f"\n{family} report")
+        print(table.to_string(index=False, float_format=lambda value: f"{value:.4f}"))
     print(f"\nSaved metrics and reports to: {output_dir.resolve()}")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Evaluate and compare the saved DL and SL bird classifiers."
+        description="Evaluate saved classifiers into independent SL and DL reports."
     )
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--num-workers", type=int, default=0)
@@ -410,24 +411,36 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("comparison_results"),
+        default=Path("family_evaluation_results"),
     )
     parser.add_argument("--skip-dl", action="store_true")
     parser.add_argument("--skip-sl", action="store_true")
+    parser.add_argument("--sl-run-dir", type=Path, help="A reduced-feature SL run.")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    sl_models = {}
+    sl_run_dir = args.sl_run_dir
+    if not args.skip_sl:
+        if sl_run_dir is None:
+            batch_dir = Path((SL_BATCH_ROOT / "latest_batch_run.txt").read_text().strip())
+            selected = json.loads((batch_dir / "selected_model.json").read_text())
+            sl_run_dir = Path(selected["model_path"]).parent.parent
+        sl_models = {name: sl_run_dir / "models" / f"{name}_final.pkl"
+                     for name in SL_MODEL_NAMES}
     if args.device == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA was requested, but torch.cuda.is_available() is False.")
 
-    assert_existing_path(DL_TEST_DIR, "DL test data", is_dir=True)
-    assert_existing_path(SL_TEST_DIR, "SL test data", is_dir=True)
-    for name, path in DL_MODELS.items():
-        assert_existing_path(path, f"DL model '{name}'")
-    for name, path in SL_MODELS.items():
-        assert_existing_path(path, f"SL model '{name}'")
+    if not args.skip_dl:
+        assert_existing_path(DL_TEST_DIR, "DL test data", is_dir=True)
+        for name, path in DL_MODELS.items():
+            assert_existing_path(path, f"DL model '{name}'")
+    if not args.skip_sl:
+        assert_existing_path(SL_TEST_DIR, "SL test data", is_dir=True)
+        for name, path in sl_models.items():
+            assert_existing_path(path, f"SL model '{name}'")
 
     print(f"[INFO] Device: {args.device}")
     print(f"[INFO] DL test data: {DL_TEST_DIR}")
@@ -453,7 +466,7 @@ def main() -> None:
             results.append(result)
 
     if not args.skip_sl:
-        feature_columns, class_names, label_encoder = load_sl_metadata(SL_RUN_DIR)
+        feature_columns, class_names, label_encoder = load_sl_metadata(sl_run_dir)
         X_test, y_test, _ = load_sl_test_data(
             test_dir=SL_TEST_DIR,
             feature_columns=feature_columns,
@@ -463,7 +476,7 @@ def main() -> None:
         )
         print(f"\n[INFO] SL test matrix: {X_test.shape}")
 
-        for model_name, model_path in SL_MODELS.items():
+        for model_name, model_path in sl_models.items():
             print(f"\n[INFO] Evaluating SL model: {model_name}")
             result = evaluate_sl_model(
                 model_name=model_name,

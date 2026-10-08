@@ -11,7 +11,10 @@ This index covers only `.py` files directly inside `01_Python`.
 | `predict_single_image.py` | Classifies one image with a saved checkpoint | DL inference helper |
 | `predict_interactive.py` | Chooses an image in a desktop dialog and predicts it | DL inference helper |
 | `dl_main.py` | Detection, crop preparation, classification, annotation | DL inference entrypoint; currently has missing local dependencies |
-| `compare_dl_sl_models.py` | Evaluates saved DL and SL models on comparable data | Cross-pipeline evaluation |
+| `compare_dl_sl_models.py` | Writes independent SL and DL reports | Family evaluation |
+| `classification_analysis.py` | Image/bird error audits and validation-selected rejection | Shared analysis |
+| `thesis_validation.py` | Nested SL CV and within-family outer-fold tests | Thesis validation |
+| `predict_sl_with_rejection.py` | Predicts features with the selected SL model and rejection | SL inference |
 | `sl_dataframe_main.py` | Configures handcrafted-feature dataset construction | SL entrypoint |
 | `sl_dataframe_construction.py` | Reads images and writes feature CSV outputs | SL feature extraction |
 | `sl_methods.py` | Defines handcrafted image descriptors | SL feature library |

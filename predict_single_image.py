@@ -4,7 +4,7 @@ from PIL import Image
 from pathlib import Path
 
 
-def predict_image(model_path, image_path):
+def predict_image(model_path, image_path, use_rejection=True):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Load checkpoint
@@ -38,10 +38,12 @@ def predict_image(model_path, image_path):
         probs = torch.nn.functional.softmax(outputs, dim=1)[0]
         top_prob, top_idx = torch.max(probs, dim=0)
 
-    print(f"Predicted class: {class_names[top_idx]}")
+    policy = checkpoint.get("rejection_policy", {"threshold": 0.0})
+    decision = "REJECT" if use_rejection and top_prob.item() < policy["threshold"] else class_names[top_idx]
+    print(f"Predicted class: {decision}")
     print(f"Confidence: {top_prob.item()*100:.2f}%")
 
-    return class_names[top_idx], top_prob.item()
+    return decision, top_prob.item()
 
 
 if __name__ == "__main__":

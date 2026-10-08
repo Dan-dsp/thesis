@@ -44,6 +44,8 @@ Important workflow update:
 
 ### Model training
 
+The orchestrator calls run_training_pipeline_batch using the fresh feature-selection manifest. Training therefore uses reduced feature vectors throughout.
+
 - [sl_training_pipeline.py](../sl_training_pipeline.py)
 
 Important workflow update:

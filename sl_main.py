@@ -69,9 +69,9 @@ def main(
 
     if run_model_training:
         # Training is last because it uses the outputs of preceding stages.
-        from sl_training_pipeline import main as training_pipeline_main
+        from sl_training_pipeline import run_training_pipeline_batch
 
-        stages.append(Stage("Model Training", training_pipeline_main))
+        stages.append(Stage("Selected-feature Model Training", run_training_pipeline_batch))
 
     if not stages:
         # Failing early gives a clear message instead of silently doing nothing.

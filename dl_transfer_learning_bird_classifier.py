@@ -245,6 +245,10 @@ import matplotlib.pyplot as plt
 
 from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from sklearn.metrics import f1_score
+from classification_analysis import (
+    dl_predictions, export_dl_test_audit, finish_dl_training, partition_id,
+)
 
 
 # ----------------------------
@@ -598,6 +602,7 @@ def train_final_model_with_internal_val(
     Returns:
     - path to best final checkpoint
     """
+    training_start = time.perf_counter()
     train_tf, eval_tf = get_transforms()
 
     # Two views of the same folder:
@@ -704,6 +709,16 @@ def train_final_model_with_internal_val(
 
     print(f"\n[FINAL TRAIN] Best ValAcc: {best_val_acc*100:.2f}%")
     plot_curves(history, out_dir, prefix="FINAL")
+    finish_dl_training(model, best_path, val_loader, device, {
+        "seed": seed, "batch_size": batch_size, "warmup_epochs": warmup_epochs,
+        "finetune_epochs": finetune_epochs, "lr_head": lr_head,
+        "lr_finetune": lr_finetune, "internal_val_ratio": val_ratio,
+        "device": device, "balance_train": balance_train,
+        "training_seconds": time.perf_counter() - training_start,
+        "train_samples": len(train_loader.dataset), "validation_samples": len(val_loader.dataset),
+        "balance_mode": balance_mode,
+        "fine_tuned_internal_layers": locals().get("selected_layers", "all"),
+    })
     return best_path
 
 
@@ -758,8 +773,15 @@ def run_kfold_on_train(
         print("\n" + "=" * 60)
         print(f"[K-FOLD] Fold {fold_i}/{k} | Train={len(tr_idx)} Val={len(va_idx)}")
 
-        tr_subset = Subset(ds_train_tf, tr_idx.tolist())
-        va_subset = Subset(ds_eval_tf,  va_idx.tolist())
+        # Select epochs/checkpoints on an inner split; reserve the outer fold.
+        set_seed(seed + fold_i)
+        inner_train, inner_val = stratified_train_val_split(targets[tr_idx], 0.15, seed + fold_i)
+        tr_subset = Subset(ds_train_tf, tr_idx[inner_train].tolist())
+        va_subset = Subset(ds_eval_tf, tr_idx[inner_val].tolist())
+        outer_loader = DataLoader(
+            Subset(ds_eval_tf, va_idx.tolist()), batch_size=batch_size, shuffle=False,
+            num_workers=num_workers,
+        )
 
         tr_loader = DataLoader(tr_subset, batch_size=batch_size, shuffle=True,
                                num_workers=num_workers, pin_memory=True)
@@ -809,11 +831,28 @@ def run_kfold_on_train(
                             "fold": fold_i}, best_path)
 
         plot_curves(history, out_dir, prefix=f"KFold_F{fold_i}")
+        checkpoint = torch.load(best_path, map_location=device)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        outer_truth, outer_pred, _ = dl_predictions(model, outer_loader, device)
+        keys = [f"{class_names[targets[i]]}/{Path(ds_eval_tf.samples[i][0]).name}" for i in va_idx]
+        outer_row = {
+            "family": "DL", "model": "resnet18_full_finetune", "repeat": 0, "fold": fold_i,
+            "partition_id": partition_id(keys), "evaluation_role": "independent_outer",
+            "n_train": len(tr_idx), "n_validation": len(va_idx),
+            "score": float(f1_score(outer_truth, outer_pred, average="macro", zero_division=0)),
+            "outer_accuracy": float(accuracy_score(outer_truth, outer_pred)),
+        }
+        pd.DataFrame([outer_row]).to_csv(out_dir / f"outer_fold_{fold_i}.csv", index=False)
+        pd.DataFrame({"sample_key": keys, "true_label": outer_truth,
+                      "predicted_label": outer_pred}).to_csv(
+                          out_dir / f"outer_predictions_fold_{fold_i}.csv", index=False)
         fold_rows.append({"fold": fold_i, "best_val_acc": best_val_acc, "best_model_path": str(best_path.resolve())})
         print(f"[K-FOLD] Fold {fold_i} best ValAcc: {best_val_acc*100:.2f}%")
 
     df = pd.DataFrame(fold_rows)
     df.to_csv(out_dir / "kfold_summary.csv", index=False)
+    pd.concat([pd.read_csv(out_dir / f"outer_fold_{i}.csv") for i in range(1, k + 1)],
+              ignore_index=True).to_csv(out_dir / "outer_cv_scores.csv", index=False)
     accs = df["best_val_acc"].to_numpy()
     mean_acc = accs.mean()
     std_acc = accs.std(ddof=1) if len(accs) > 1 else 0.0
@@ -900,6 +939,10 @@ def evaluate_on_test(
 
     plot_confusion_matrix(cm, class_names, cm_path)
     rep_path.write_text(f"Test Accuracy: {acc:.6f}\n\n{report}", encoding="utf-8")
+    audit_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False,
+                              num_workers=num_workers)
+    export_dl_test_audit(model, audit_loader, test_ds, list(range(len(test_ds))),
+                         device, ckpt, out_dir / "predictions", model_name="resnet18_full_finetune")
 
     print(f"[TEST] Saved confusion matrix: {cm_path.resolve()}")
     print(f"[TEST] Saved classification report: {rep_path.resolve()}")

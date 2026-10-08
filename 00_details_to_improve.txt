@@ -1,0 +1,219 @@
+CODE IMPROVEMENT LOG
+Project: F:/01_Univalle/01_TG/01_Python
+Created: 2026-10-08
+
+PURPOSE AND UPDATE POLICY
+Keep only pending improvements. Append dated findings and remove entries when
+their required work has been verified as complete. Explaining a code limitation
+in main.tex does not fix it. The thesis has been complemented on 2026-10-08;
+Python code and model artifacts have not been changed by this document review.
+
+THESIS OBJECTIVES
+Source: 02_thesis_document/main.tex, lines 445-463.
+General: Develop a system for classifying representative bird species of
+southwestern Colombia in digital images using Machine Learning.
+Specific objectives:
+1. Build a public-source image dataset for training and testing.
+2. Apply filtering, enhancement and segmentation to highlight bird attributes,
+   facilitate localization and improve differentiation between species.
+3. Implement Shallow Learning while addressing underfitting and overfitting.
+4. Implement Deep Learning while addressing underfitting and overfitting.
+5. Establish the scope and limitations of both recognition systems.
+
+2026-10-08 | INITIAL CODE REVIEW
+
+01. HIGH: Fourier descriptors are unintentionally excluded.
+Files: sl_feature_comparison_tools.py, sl_training_pipeline.py,
+sl_models_evaluation.py. startswith(f) mistakes fourier_* for legacy f0/f1
+aliases. Other descriptive columns take precedence, dropping Fourier columns.
+Default extraction defines 313 values including 20 Fourier descriptors; the
+saved runtime_smoke summary reports 293 detected features.
+Action: Match aliases exactly (e.g. ^f[0-9]+$), share schema logic, verify feature
+order and regenerate affected rankings/models before replacing results.
+
+02. HIGH: Feature selection precedes internal validation splitting.
+Files: sl_feature_comparison.py, sl_training_pipeline.py.
+All original train rows influence selection before internal validation is
+created. Final test rows are excluded, but internal validation/CV is not
+independent of supervised feature selection.
+Action: Select within development-training data or within CV folds. Consider
+nested CV to evaluate the entire tuned procedure; retain untouched final tests.
+
+03. HIGH: Verify identical DL/SL test sample identities.
+File: compare_dl_sl_models.py. Images and feature CSVs are loaded separately.
+Class/schema/dimension checks and equal sample counts do not prove membership.
+Action: Match stable source/crop IDs and labels; save a shared evaluation manifest.
+
+04. HIGH: Separate balanced and unbalanced result protocols.
+DL main configurations undersample training/testing. SL keeps natural training
+counts and balances validation/testing. Standalone comparison defaults to
+unbalanced testing unless --balance-test is used. Saved bbox DL reports use 132
+samples; comparison_results uses 149; no-bbox DL uses 137.
+Action: Record exact IDs, class supports, balancing settings, dataset version and
+run configuration. Do not interchange scores from different evaluation subsets.
+
+05. HIGH: Dataset splitting cannot run directly as configured.
+File: split_dataset.py. __main__ uses source_root/dest_root, but their assignments
+are commented out. Action: Add explicit CLI paths and validate ratios/paths.
+Handle existing outputs so stale files cannot survive into revised splits.
+
+06. HIGH: Consolidate deployment imports and paths.
+Root dl_main.py imports detector/crop/classifier modules absent at root; sources
+exist under Brumaire_bird_classifier. There are duplicate entrypoints.
+Action: Package shared modules with explicit imports and configurable paths.
+Separate interactive image display from batch processing.
+
+07. HIGH: Masked crops are not passed to the classifier.
+Both dl_main.py versions create/display masked_crops, but classifier preparation
+uses the original image and boxes. bird_detector.py dataset processing also
+produces rectangular crops even when Mask R-CNN supplies masks.
+Action: Use masked crops when intended, or describe bbox behavior accurately.
+This directly affects specific objective 2.
+
+08. Align training and inference image geometry.
+DL training resizes directly to 224x224; utils_bounding_boxes_separation.py expands
+boxes by 10%, preserves aspect ratio and uses black letterbox padding.
+Action: Share transforms or measure/document the difference.
+
+09. Record actual final-training sample counts for each reported run.
+Files: SL and DL training scripts. The artifacts need an explicit inventory of
+samples actually used for parameter fitting, including undersampling and
+internal validation effects.
+Action: Save and reconcile per-run fitting memberships/counts before
+interpreting score differences as a comparison of equally trained models.
+
+10. Freezing parameters does not freeze BatchNorm state.
+Both DL scripts call model.train(), allowing running-statistic updates in frozen
+BatchNorm modules despite requires_grad=False.
+Action: Decide whether this adaptation is intended; otherwise keep frozen
+BatchNorm modules in evaluation mode. Distinguish parameters from buffers.
+
+11. Define partial fine-tuning precisely.
+dl_transfer_learning_bird_classifier_partial_finetune.py selects the last four
+parameter-owning modules, such as convolution/BatchNorm, not four residual blocks.
+Action: Save exact module names and trainable count; clarify metadata when the
+best checkpoint comes from warmup rather than partial fine-tuning.
+
+12. Preserve complete DL run provenance.
+Seeds provide best-effort reproducibility, not guaranteed GPU determinism.
+Outputs use fixed directories; the full script's default differs from saved
+bbox/no-bbox directories. Checkpoint history stops at its winning epoch.
+Action: Isolate runs and save configuration, dependencies, source revision,
+hardware, split/balanced IDs, best epoch and complete training history.
+
+13. Group related crops in internal validation/CV splits.
+One original image can yield several _bN crops. Initial train/test splitting
+precedes cropping, but later internal splits operate on individual crops.
+Action: Retain original IDs, consider group splitting, and check original-image
+duplicates/near-duplicates before partitioning.
+
+14. Save exact balanced evaluation membership.
+sl_training_pipeline.py stores raw split roles and balanced support counts,
+but not the specific balanced subset rows.
+Action: Return/persist selected indices from make_balanced_subset.
+
+16. Distinguish RFECV subsets from ranked top-k exports.
+Top-100/80/50 wrapper exports can include eliminated features to fill a cutoff.
+Permutation importance uses the fitted estimator's own training data. Full-space
+tuning is reused for RFECV rather than nested within an outer evaluation CV.
+Action: Evaluate held-out/cross-fitted importance and synchronize variant
+descriptions in guides and exported artifacts.
+
+17. Coordinate non-finite-value handling.
+sl_methods.py replaces non-finite values with zero. Analysis may median-impute
+its matrix; reduced CSVs retain original values, and training rejects invalid
+values. Fully missing columns may affect imputer output/name alignment.
+Action: Log descriptor failures and use an explicit, consistent export policy.
+
+18. Correct edge histogram names and dimensions.
+sl_methods.py bins follow 0,45,90,135 degrees, but names list horizontal,
+vertical,positive diagonal,negative diagonal. Default 2x2 yields 20 values;
+the docstring instead describes 4x4 and 80.
+Action: Align naming/dimensions and handle unsigned-angle wraparound.
+
+19. Qualify descriptor definitions and redundancy.
+Hu uses grayscale intensity, not an explicit silhouette. Zernike uses degree 6
+with conjugate-magnitude redundancy across positive/negative m. GLCM supplies
+six summaries, not the full original Haralick set. HOG/edge histograms are custom
+compact variants. Gabor stats use signed responses despite magnitude comments.
+Action: Match descriptions to code and verify affine formulas/log-polar claims.
+Affine invariance does not imply general perspective invariance.
+
+20. Keep optional BoVW distinct from active extraction.
+SIFT/ORB BoVW are disabled by default because centers=None. ORB uses Hamming
+assignment, but rounded Euclidean k-means centers are approximate prototypes.
+Action: Train suitable codebooks only on permitted training data, save them with
+runs and identify feature families actually enabled.
+
+21. Improve feature identity and provenance.
+sl_dataframe_construction.py stores names/IDs/species/split, not source paths or
+detection provenance. Equal image stems with different extensions can overwrite
+per-image CSVs. Enumeration IDs can shift when dataset contents change.
+Action: Add stable IDs/collision checks and original-to-crop-to-feature mappings
+that retain Macaulay IDs and source-image attribution. Reconcile original,
+crop and feature-row counts for each dataset version. Objective 1.
+
+22. Clarify interactive and legacy helper status.
+predict_interactive.py is entirely commented out. Single-image example paths
+are old. sl_models_evaluation.py expects older model filenames/labels and does
+not restore current label-encoder metadata.
+Action: Restore/configure intended tools or mark inactive; reuse current loaders.
+
+23. Synchronize comparison CLI and documentation.
+compare_dl_sl_models.py hard-codes paths rather than exposing the path options
+described by its guide. Skip flags still encounter both-family path checks.
+Actual outputs are CSV/text reports, without plots described by the guide.
+Action: Expose input paths, validate requested families only and update docs.
+
+24. Integrate segmentation experiments deliberately.
+feature_extraction_analysis.ipynb explores Otsu, GrabCut, HSV and saliency-assisted
+GrabCut; they are not automatically training steps. detect_main_bird_crop calls
+get_bird_crops with an incompatible signature; detector import needs fixing.
+Action: Correct interfaces and record selected processing, before/after examples
+and measured effects. Separate exploration from objective-2 implementation.
+
+25. Strengthen Excel-assisted renaming safeguards.
+rename_images_from_excel.py writes mapping CSVs even during dry run. Missing
+cells become strings before dropna. Planned duplicate target names are not
+checked against each other; header handling combines pandas defaults/skip rows.
+Action: Validate names early, check target uniqueness and clarify preview/header
+behavior before renaming data.
+
+26. Clarify Drive integration and batch behavior.
+drive_connection.py comments call processing a placeholder, but code performs
+prediction and uploads PNG/CSV outputs. Inference also saves/opens a fixed local
+output per image. Action: Update docs, configure paths, separate display from
+processing and improve cleanup/error handling. Keep OAuth tokens/credentials
+outside shared source control. Credential contents were not read in this review.
+
+27. Add evidence for underfitting/overfitting objectives.
+CV/validation do not themselves prove a bias/variance balance. DL saves curves;
+SL lacks comparable training-versus-validation learning curves.
+Action: Preserve learning curves, generalization gaps, fold variability and
+per-class errors. Broad architecture optimization is outside the stated scope.
+
+28. Separate model choice from final-test conclusions.
+All tuned SL models/feature variants can be tested and ranked by test scores.
+Repeatedly changing choices from these scores makes test data development data.
+Action: Record development-based choices first; qualify retrospective winner
+selection from the same multi-model test comparison.
+
+PENDING THESIS WORK
+
+T07. Replace the unrelated SLAM/robot-mapping background table with sourced
+bird-classification literature and complete the national/international background
+placeholders. Reconcile source-image attribution and final inventory evidence.
+The reviewed methods and results sections are complemented, but unverified
+literature, source counts and missing attribution must not be invented.
+The bibliography build reports missing entries for Murcia, Quintero, Chen,
+Schadler, Macaulay_library and Cornell_lab. Replace unrelated template citations
+and supply verified source entries for the actual image collection.
+
+T10. Review remaining document layout warnings: the existing header height is
+too small for the logos and several pre-existing long URLs exceed the margins.
+These do not prevent a PDF build, but still require formatting review.
+
+FUTURE UPDATES
+Append dated findings, sources, implications and recommended actions. Remove
+resolved entries after verification; retain requirements that remain pending in
+code or experimental evidence even when their limitation is explained in main.tex.

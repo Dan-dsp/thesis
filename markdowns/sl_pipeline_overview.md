@@ -1,5 +1,7 @@
 # Shallow Learning Pipeline Overview
 
+Current thesis changes: sl_main trains the selected-feature batch; standalone training defaults to consensus top-50. Read [Thesis Evaluation Protocol](thesis_evaluation_protocol.md) for new per-image errors, rejection, model complexity and statistically independent outer CV. Historical full-feature training examples are superseded by these reduced-feature defaults.
+
 This document describes the full shallow-learning process in your project from image folders to trained models and analysis outputs.
 
 The goal is to make the workflow easy to understand now, and also make it easy to turn into future Sphinx / `github.io` documentation later.
@@ -138,7 +140,7 @@ This stage reads the global feature CSV and runs:
 
 ### Current input CSV
 
-- `F:/01_Univalle/01_TG/dataset_features/shallow_learning_birds.csv`
+- `F:/01_Univalle/01_TG/sl_results/training_ready_datasets/filters/consensus/consensus_top_50_training.csv`
 
 ### Current output folder
 

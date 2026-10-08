@@ -1,5 +1,7 @@
 # `sl_training_pipeline.py` Guide
 
+The current [Thesis Evaluation Protocol](thesis_evaluation_protocol.md) describes rejection, complexity, image audits and statistical evidence. Training defaults to consensus top-50. Regenerate historical feature-selection manifests before batch training.
+
 This guide explains the current behavior of [sl_training_pipeline.py](../sl_training_pipeline.py), including the recent changes:
 
 - it reads the CSV from `dataset_features`
@@ -67,13 +69,13 @@ In batch mode, this same workflow is repeated once per exported feature-set CSV 
 
 ## Input Modes
 
-### 1. Default full-feature dataset
+### 1. Default selected-feature dataset
 
 If you run the script without extra arguments, it uses the default path:
 
-- `F:/01_Univalle/01_TG/dataset_features/shallow_learning_birds.csv`
+- `F:/01_Univalle/01_TG/sl_results/training_ready_datasets/filters/consensus/consensus_top_50_training.csv`
 
-That is the full feature dataset produced by the feature-extraction stage.
+The default input contains the 50 original features selected by filter consensus. The full extraction CSV supplies feature selection rather than direct model training.
 
 ### 2. One selected reduced dataset
 
@@ -895,7 +897,7 @@ Saves a `.png` confusion matrix with:
 
 Current defaults:
 
-- `DEFAULT_DATA_CSV_PATH = F:/01_Univalle/01_TG/dataset_features/shallow_learning_birds.csv`
+- `DEFAULT_DATA_CSV_PATH = F:/01_Univalle/01_TG/sl_results/training_ready_datasets/filters/consensus/consensus_top_50_training.csv`
 - `DEFAULT_OUT_DIR = F:/01_Univalle/01_TG/sl_outputs`
 - `DEFAULT_TRAINING_READY_MANIFEST_PATH = F:/01_Univalle/01_TG/sl_results/training_ready_datasets/training_ready_dataset_manifest.csv`
 - `DEFAULT_BATCH_OUT_DIR = F:/01_Univalle/01_TG/sl_outputs_batch`
@@ -904,7 +906,7 @@ Current defaults:
 - `SCORING = "f1_macro"`
 - `VAL_FRACTION = 0.2`
 - `GRIDSEARCH_N_JOBS = -1`
-- `GRIDSEARCH_PRE_DISPATCH = "2*n_jobs"`
+- `GRIDSEARCH_PRE_DISPATCH = "n_jobs"`; parallel backend is threading.
 - `TREE_MODEL_N_JOBS = 1`
 - `XGB_N_JOBS = 1`
 
