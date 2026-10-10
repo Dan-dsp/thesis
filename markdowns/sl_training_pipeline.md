@@ -7,3 +7,14 @@ Main SL model-training pipeline. It loads the handcrafted feature CSV or reduced
 It supports SVM, Random Forest, k-NN, and XGBoost when installed. Each run records models, feature columns, metrics, confusion matrices, comparisons, and timing in a timestamped output directory. Batch mode consumes the feature-set manifest from `sl_feature_comparison.py`.
 
 See `sl_training_pipeline_guide.md` for the detailed guide.
+
+Plots use the non-interactive Matplotlib `Agg` backend and are saved as PNG files.
+This avoids Tkinter cleanup errors during threaded grid search on Windows
+(`main thread is not in main loop` and `Tcl_AsyncDelete`). It does not change
+feature selection, model settings, or scoring.
+
+If feature selection already saved the training-ready datasets, restart Python
+and run `python sl_training_pipeline.py --run-exported-batch` from `01_Python`.
+This starts a new training batch without repeating extraction or RFECV; it does
+not resume a partially completed batch. Joblib temporary-folder cleanup warnings
+after an abrupt exit should be investigated separately if they persist.

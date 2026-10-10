@@ -39,10 +39,12 @@ independent of supervised feature selection.
 Action: Select within development-training data or within CV folds. Consider
 nested CV to evaluate the entire tuned procedure; retain untouched final tests.
 
-03. HIGH: Verify identical DL/SL test sample identities.
-File: compare_dl_sl_models.py. Images and feature CSVs are loaded separately.
-Class/schema/dimension checks and equal sample counts do not prove membership.
-Action: Match stable source/crop IDs and labels; save a shared evaluation manifest.
+03. HIGH: Persist shared source/crop evaluation provenance.
+2026-10-10 verification: the new DL audits and selected MI top-100 SL audit
+share all 149 species/filename keys and labels. This resolves the key-level
+correspondence question for these specific outputs, not original-photo identity.
+Action: Save a shared evaluation manifest and original-to-crop mapping; attach
+model/dataset hashes and distinguish related crops from independent photographs.
 
 04. HIGH: Separate balanced and unbalanced result protocols.
 DL main configurations undersample training/testing. SL keeps natural training
@@ -75,12 +77,11 @@ DL training resizes directly to 224x224; utils_bounding_boxes_separation.py expa
 boxes by 10%, preserves aspect ratio and uses black letterbox padding.
 Action: Share transforms or measure/document the difference.
 
-09. Record actual final-training sample counts for each reported run.
-Files: SL and DL training scripts. The artifacts need an explicit inventory of
-samples actually used for parameter fitting, including undersampling and
-internal validation effects.
-Action: Save and reconcile per-run fitting memberships/counts before
-interpreting score differences as a comparison of equally trained models.
+09. Preserve fitting membership, not only verified counts.
+2026-10-10 artifacts establish 969 fitting/171 validation images for both new DL
+runs and 988/247 internally for SL, with SL final refitting on 1235 images.
+Action: Persist exact DL balancing/fitting IDs and reconcile original-to-crop
+membership. Counts alone do not establish equally trained or independent samples.
 
 10. Freezing parameters does not freeze BatchNorm state.
 Both DL scripts call model.train(), allowing running-statistic updates in frozen
@@ -159,11 +160,16 @@ are old. sl_models_evaluation.py expects older model filenames/labels and does
 not restore current label-encoder metadata.
 Action: Restore/configure intended tools or mark inactive; reuse current loaders.
 
-23. Synchronize comparison CLI and documentation.
-compare_dl_sl_models.py hard-codes paths rather than exposing the path options
-described by its guide. Skip flags still encounter both-family path checks.
-Actual outputs are CSV/text reports, without plots described by the guide.
-Action: Expose input paths, validate requested families only and update docs.
+23. Point comparison at intended DL checkpoints and expose provenance.
+2026-10-10: compare_dl_sl_models.py still loads older checkpoints under
+01_Python/outputs_resnet18_thesis_dl_bbox and
+01_Python/outputs_resnet18_thesis_partial_finetune. The newly trained models
+instead live at project-root outputs_resnet18_thesis and
+outputs_resnet18_thesis_partial_finetune. The family DL CSV therefore does not
+represent the new runs. SL resolves the current validation-selected batch run.
+Action: Make checkpoint paths explicit/configurable, record their hashes and
+configuration in outputs, and regenerate family reports for the intended models.
+Requested-family path checks are already conditional; that old issue is removed.
 
 24. Integrate segmentation experiments deliberately.
 feature_extraction_analysis.ipynb explores Otsu, GrabCut, HSV and saliency-assisted
@@ -192,11 +198,6 @@ SL lacks comparable training-versus-validation learning curves.
 Action: Preserve learning curves, generalization gaps, fold variability and
 per-class errors. Broad architecture optimization is outside the stated scope.
 
-28. Separate model choice from final-test conclusions.
-All tuned SL models/feature variants can be tested and ranked by test scores.
-Repeatedly changing choices from these scores makes test data development data.
-Action: Record development-based choices first; qualify retrospective winner
-selection from the same multi-model test comparison.
 
 PENDING THESIS WORK
 

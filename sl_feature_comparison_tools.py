@@ -52,7 +52,10 @@ _ACTIVE_WRAPPER_FIT_PROGRESS = None
 
 def _import_pyplot():
     """Import and return pyplot only for helpers that actually create figures."""
-    # Delay the Matplotlib import so non-plotting commands do not load its backend.
+    import matplotlib
+
+    # Selection and training share a process; keep saved plots free of Tk objects.
+    matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     return plt

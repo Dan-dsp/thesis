@@ -74,7 +74,10 @@ DUPLICATE_LEGACY_FEATURES = {"f39"}
 
 def _import_pyplot():
     """Import pyplot lazily because training can run without producing figures."""
-    # Import plotting only when a confusion matrix must be written.
+    import matplotlib
+
+    # Saved plots must not leave Tk GUI objects for training threads to collect.
+    matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     return plt
