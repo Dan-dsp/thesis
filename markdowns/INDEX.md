@@ -13,7 +13,9 @@ This index covers only `.py` files directly inside `01_Python`.
 | `dl_main.py` | Detection, crop preparation, classification, annotation | DL inference entrypoint; currently has missing local dependencies |
 | `compare_dl_sl_models.py` | Writes independent SL and DL reports | Family evaluation |
 | `classification_analysis.py` | Image/bird error audits and validation-selected rejection | Shared analysis |
+| `image_error_analysis.py` | Shared-image error matrices, gallery, species and condition summaries | Descriptive image analysis |
 | `thesis_validation.py` | Nested SL CV and within-family outer-fold tests | Thesis validation |
+| `result_plots.py` | Non-GUI PNGs from existing selection/CV/evaluation tables | Shared visualization |
 | `predict_sl_with_rejection.py` | Predicts features with the selected SL model and rejection | SL inference |
 | `sl_dataframe_main.py` | Configures handcrafted-feature dataset construction | SL entrypoint |
 | `sl_dataframe_construction.py` | Reads images and writes feature CSV outputs | SL feature extraction |
@@ -22,6 +24,7 @@ This index covers only `.py` files directly inside `01_Python`.
 | `sl_feature_comparison_tools.py` | Implements selection, ranking, and diagnostic methods | SL feature-selection library |
 | `sl_training_pipeline.py` | Trains and evaluates classical ML models | SL training |
 | `sl_main.py` | Runs selected SL stages in order | SL orchestrator |
+| `run_pipeline.py` | Sequential SL/DL training and reporting launcher with saved logs | Pipeline orchestration |
 | `sl_models_evaluation.py` | Extra plotting and evaluation utilities | Older SL helper |
 
 The current end-to-end SL route is `sl_dataframe_main.py` -> `sl_feature_comparison.py` -> `sl_training_pipeline.py`, optionally launched by `sl_main.py`.

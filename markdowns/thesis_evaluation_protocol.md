@@ -15,7 +15,12 @@ python sl_feature_comparison.py
 python sl_training_pipeline.py --run-exported-batch
 ```
 
-New manifests record selection_split=train and selection_protocol=train_only_v1.
+New manifests record selection_split=train and selection_protocol=train_only_v2_fourier.
+Legacy names match only f followed by digits, so fourier_1 through fourier_20
+remain descriptive feature candidates. Earlier v1 exports excluded them and are
+refused by batch training. Re-run selection and training, not extraction, when
+the raw feature CSV already contains these Fourier columns. Re-run nested SL CV
+and downstream statistics/error reports if they were previously generated.
 Older manifests fail validation and must be regenerated. This version marker documents
 provenance; it is not a cryptographic guarantee. The usual export has up to 29 variants
 when XGBoost is available. Internal validation used by the batch has already influenced
@@ -37,6 +42,8 @@ a comparable GPU FLOP or measured peak-memory analysis is not inferred from para
 compare_dl_sl_models.py is retained as a compatibility filename. Its new outputs are
 family_evaluation_results/sl and family_evaluation_results/dl, with no joint ranking.
 Its SL default resolves the validation-selected run from the latest batch.
+The full-DL checkpoint path matches outputs_resnet18_thesis/final_train, as used
+by the full-fine-tuning trainer; partial fine-tuning retains its separate folder.
 The two evaluation populations and training settings must be stated when mentioning
 descriptive performance across families. Existing comparison_results are historical.
 
@@ -112,11 +119,18 @@ and annotation_template.csv. Cross-family overlap is descriptive error inspectio
 sample_key is species/original_filename. Match only identical original images; if crops have
 different names, supply a verified correspondence instead of assuming identical identity.
 
-Fill annotation_template.csv with bird_id, semicolon-separated conditions (blur;occlusion;
+The current analysis is image-focused: individual-bird identity is not required.
+Fill annotation_template.csv with semicolon-separated conditions (blur;occlusion;
 backlighting;small_bird, for example) and notes, then rerun with --annotations path/to/filled.csv.
-The resulting bird_error_summary.csv and condition_summary.csv describe repeated individual
-bird failures and context-specific accuracy. Annotate successful images too to provide condition
-denominators. Bird identity must come from metadata/manual review, never species alone.
+condition_summary.csv reports per-model condition-specific errors and denominators.
+Annotate successful images too. Observed condition associations do not prove causation.
+
+compare_dl_sl_models.py now exports full-test raw predictions and automatically creates
+image_error_analysis/error_gallery.html, image_errors.png, shared/complementary error lists,
+species confusion summaries and explicit unmatched-image reporting. The analysis ignores
+rejection decisions and uses raw species predictions; rejection helpers are otherwise unchanged.
+See [Image Error Analysis](image_error_analysis.md). Legacy bird_id annotations are still
+readable for compatibility, but the new template does not request them.
 
 New code does not regenerate historical experiments automatically. Re-run selection and
 training to obtain the new artifacts. Changing a model after inspecting test errors requires

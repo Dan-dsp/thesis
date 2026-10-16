@@ -19,6 +19,7 @@ token.json
 *.zip
 
 # Generated experiment outputs
+pipeline_runs/
 comparison_results/
 filter_comparison_outputs/
 outputs_resnet18_thesis_dl_bbox/

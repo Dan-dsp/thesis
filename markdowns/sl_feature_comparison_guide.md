@@ -168,7 +168,7 @@ This helps you inspect whether final selected features still contain strong redu
 
 ### 7. Training-ready CSV export
 
-The manifest records selection_split=train and selection_protocol=train_only_v1. Regenerate old exports before the new batch training; selection inside outer-CV evaluation is described in [Thesis Evaluation Protocol](thesis_evaluation_protocol.md).
+The manifest records selection_split=train and selection_protocol=train_only_v2_fourier. Regenerate old exports before the new batch training; this version includes Fourier features among selection candidates. Selection inside outer-CV evaluation is described in [Thesis Evaluation Protocol](thesis_evaluation_protocol.md).
 
 After the rankings and diagnostics are finished, the workflow now exports reduced CSV datasets that can be used directly by [sl_training_pipeline.py](../sl_training_pipeline.py).
 

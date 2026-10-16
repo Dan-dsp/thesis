@@ -241,7 +241,10 @@ from torch import nn, optim
 from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms, models
 from tqdm import tqdm
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from result_plots import plot_matrix, plot_outer_scores
 
 from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
@@ -834,6 +837,10 @@ def run_kfold_on_train(
         checkpoint = torch.load(best_path, map_location=device)
         model.load_state_dict(checkpoint["model_state_dict"])
         outer_truth, outer_pred, _ = dl_predictions(model, outer_loader, device)
+        plot_matrix(confusion_matrix(outer_truth, outer_pred, labels=np.arange(len(class_names))),
+                    class_names, out_dir / f"outer_fold_{fold_i}_cm.png",
+                    f"Full fine-tuning: independent outer fold {fold_i}",
+                    xlabel="Predicted class", ylabel="True class")
         keys = [f"{class_names[targets[i]]}/{Path(ds_eval_tf.samples[i][0]).name}" for i in va_idx]
         outer_row = {
             "family": "DL", "model": "resnet18_full_finetune", "repeat": 0, "fold": fold_i,
@@ -853,6 +860,7 @@ def run_kfold_on_train(
     df.to_csv(out_dir / "kfold_summary.csv", index=False)
     pd.concat([pd.read_csv(out_dir / f"outer_fold_{i}.csv") for i in range(1, k + 1)],
               ignore_index=True).to_csv(out_dir / "outer_cv_scores.csv", index=False)
+    plot_outer_scores(pd.read_csv(out_dir / "outer_cv_scores.csv"), out_dir / "outer_cv_scores.png")
     accs = df["best_val_acc"].to_numpy()
     mean_acc = accs.mean()
     std_acc = accs.std(ddof=1) if len(accs) > 1 else 0.0

@@ -1,6 +1,15 @@
 # `sl_training_pipeline.py`
 
+The `cm/` folder also contains per-model grid-search diagnostics and grouped
+validation/test metrics, alongside the existing confusion matrices.
+See [Result Plots](result_plots.md).
+
 Training now defaults to the reduced consensus top-50 CSV; batch mode requires a new train-only selection manifest. It writes per-image prediction/error audits, rejection coverage and accuracy, model-specific complexity, and a validation-selected model descriptor. See [Thesis Evaluation Protocol](thesis_evaluation_protocol.md).
+
+Legacy column names are only `f` followed by digits (for example, `f0`).
+Descriptive `fourier_1` through `fourier_20` are eligible predictors, not legacy
+columns. Batch training requires `train_only_v2_fourier` exports; regenerate
+selection with `python sl_feature_comparison.py` before retraining old results.
 
 Main SL model-training pipeline. It loads the handcrafted feature CSV or reduced feature-set CSVs, uses only the declared training rows to build an internal validation split, tunes classical models, and evaluates the selected models on the held-out test rows.
 

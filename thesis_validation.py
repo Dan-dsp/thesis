@@ -12,6 +12,7 @@ import pandas as pd
 from scipy.stats import t as student_t
 
 from classification_analysis import partition_id, save_json
+from result_plots import plot_matrix, plot_outer_scores
 
 
 def compare_outer_scores(paths, out_dir):
@@ -71,6 +72,7 @@ def compare_outer_scores(paths, out_dir):
     scores.groupby(["family", "model"]).score.agg(["mean", "std", "count"]).to_csv(
         out_dir / "family_cv_summary.csv")
     result.to_csv(out_dir / "within_family_tests.csv", index=False)
+    plot_outer_scores(scores, out_dir / "outer_cv_scores.png")
     save_json(out_dir / "statistical_protocol.json", {
         "family": scores.family.iloc[0], "metric": "macro_f1",
         "test": "Nadeau-Bengio corrected paired t-test", "multiplicity": "Holm",
@@ -84,7 +86,7 @@ def compare_outer_scores(paths, out_dir):
 def run_sl_nested_cv(data_csv, out_dir, method="mi", n_features=50, folds=5, seed=42):
     from sklearn.base import clone
     from sklearn.feature_selection import SelectKBest, f_classif, mutual_info_classif
-    from sklearn.metrics import f1_score
+    from sklearn.metrics import confusion_matrix, f1_score
     from sklearn.model_selection import GridSearchCV, StratifiedKFold
     from sklearn.pipeline import Pipeline
     import joblib
@@ -101,7 +103,8 @@ def run_sl_nested_cv(data_csv, out_dir, method="mi", n_features=50, folds=5, see
     if not np.isfinite(X).all():
         raise ValueError("Nested evaluation requires finite features.")
     from sklearn.preprocessing import LabelEncoder
-    y = LabelEncoder().fit_transform(df.species)
+    encoder = LabelEncoder().fit(df.species)
+    y = encoder.transform(df.species)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     keys = df.species.astype(str) + "/" + df.orig_filename.astype(str)
@@ -124,6 +127,10 @@ def run_sl_nested_cv(data_csv, out_dir, method="mi", n_features=50, folds=5, see
                 search.fit(X[train_idx], y[train_idx])
             pred = search.predict(X[val_idx])
             model_name = f"{name}_{method}_top_{n_features}"
+            plot_matrix(confusion_matrix(y[val_idx], pred, labels=np.arange(len(encoder.classes_))),
+                        encoder.classes_, out_dir / f"{model_name}_fold_{fold}_cm.png",
+                        f"{model_name}: independent outer fold {fold}",
+                        xlabel="Predicted class", ylabel="True class")
             rows.append({
                 "family": "SL", "model": model_name, "repeat": 0, "fold": fold,
                 "partition_id": partition_id(keys.iloc[val_idx].tolist()),
@@ -133,6 +140,7 @@ def run_sl_nested_cv(data_csv, out_dir, method="mi", n_features=50, folds=5, see
             })
             pd.DataFrame(rows).to_csv(out_dir / "outer_cv_scores.csv", index=False)
             save_json(out_dir / f"{model_name}_fold_{fold}_params.json", search.best_params_)
+    plot_outer_scores(pd.DataFrame(rows), out_dir / "outer_cv_scores.png")
     save_json(out_dir / "protocol.json", {
         "family": "SL", "selection": method, "n_features": n_features,
         "folds": folds, "seed": seed, "selection_and_tuning": "inside_inner_CV",

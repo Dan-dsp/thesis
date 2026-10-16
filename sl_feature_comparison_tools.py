@@ -15,11 +15,13 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import json
+import re
 from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
 import pandas as pd
+from result_plots import plot_feature_scores, plot_grid_search, plot_rfecv
 from joblib import parallel
 from scipy.stats import shapiro
 from tqdm import tqdm
@@ -135,11 +137,11 @@ def get_feature_columns(df: pd.DataFrame, label_col: str = "species") -> list[st
 
     legacy_f_cols = [
         col for col in numeric_cols
-        if col.startswith("f") and col not in DUPLICATE_LEGACY_FEATURES
+        if re.fullmatch(r"f[0-9]+", col) and col not in DUPLICATE_LEGACY_FEATURES
     ]
     descriptive_cols = [
         col for col in numeric_cols
-        if not col.startswith("f") and col not in DUPLICATE_DESCRIPTIVE_FEATURES
+        if not re.fullmatch(r"f[0-9]+", col) and col not in DUPLICATE_DESCRIPTIVE_FEATURES
     ]
 
     # Prefer descriptive names; use f0, f1, ... only for legacy datasets.
@@ -413,6 +415,16 @@ def run_shapiro_tests(
             "non_gaussian_features": int((~result["gaussian_at_alpha"]).sum()),
         }
         save_json(summary, save_path / "shapiro_summary.json")
+        plt = _import_pyplot()
+        fig, ax = plt.subplots(figsize=(8, 5))
+        p_values = result["p_value"].dropna()
+        ax.hist(p_values, bins=np.linspace(0, 1, 21), color="#168575")
+        ax.axvline(alpha, color="#c13f57", linestyle="--", label=f"alpha = {alpha}")
+        ax.set(xlabel="Shapiro p-value", ylabel="Number of features",
+               title="Pooled train-feature normality (exploratory, not model eligibility)")
+        ax.legend()
+        fig.savefig(save_path / "shapiro_p_values.png", dpi=160, bbox_inches="tight")
+        plt.close(fig)
 
     return result
 
@@ -615,6 +627,8 @@ def rank_pca_features(
     if save_dir is not None:
         save_path = ensure_dir(save_dir)
         ranked.to_csv(save_path / "pca_feature_ranking.csv", index=False)
+        plot_feature_scores(ranked, "weighted_abs_loading", save_path / "pca_feature_ranking.png",
+                            "PCA original-feature loading ranking (top 20)")
 
     return ranked
 
@@ -1070,7 +1084,17 @@ def run_wrapper_rfecv(
         # Save the elimination curve when the installed sklearn version exposes it.
         if hasattr(rfecv, "cv_results_"):
             rfecv_curve_df = pd.DataFrame(rfecv.cv_results_)
+            if "n_features" not in rfecv_curve_df:
+                # Older sklearn versions omit counts; use the actual elimination schedule.
+                counts = sorted(set(range(n_features, min_features_to_select, -rfecv_step)) |
+                                {min_features_to_select})
+                if len(counts) != len(rfecv_curve_df):
+                    raise ValueError("RFECV score/count mismatch; cannot label the feature axis.")
+                rfecv_curve_df["n_features"] = counts
             rfecv_curve_df.to_csv(save_path / f"{model_name}_rfecv_curve.csv", index=False)
+            plot_rfecv(rfecv_curve_df, len(selected_features),
+                       save_path / f"{model_name}_rfecv_curve.png", model_name,
+                       metric=refit_metric)
 
         initial_cv_results_df.to_csv(
             save_path / f"{model_name}_initial_grid_search_results.csv",
@@ -1079,6 +1103,14 @@ def run_wrapper_rfecv(
         cv_results_df.to_csv(save_path / f"{model_name}_grid_search_results.csv", index=False)
         save_json(initial_best_summary, save_path / f"{model_name}_initial_best_summary.json")
         save_json(best_summary, save_path / f"{model_name}_best_summary.json")
+        plot_grid_search(initial_cv_results_df,
+                         save_path / f"{model_name}_initial_grid_search.png",
+                         f"{model_name}: full-feature search", metric=refit_metric)
+        plot_grid_search(cv_results_df, save_path / f"{model_name}_grid_search.png",
+                         f"{model_name}: selected-feature search", metric=refit_metric)
+        plot_feature_scores(ranking_df, "selected_subset_importance",
+                            save_path / f"{model_name}_selected_importance.png",
+                            f"{model_name}: selected-subset permutation importance (top 20)")
 
         top_feature_slices = save_top_ranked_feature_slices(
             ranking_df,
@@ -1150,6 +1182,11 @@ def run_embedded_feature_importance(
         ranking_df.to_csv(save_path / f"{model_name}_feature_importance.csv", index=False)
         cv_results_df.to_csv(save_path / f"{model_name}_grid_search_results.csv", index=False)
         save_json(best_summary, save_path / f"{model_name}_best_summary.json")
+        plot_feature_scores(ranking_df, "feature_importance",
+                            save_path / f"{model_name}_feature_importance.png",
+                            f"{model_name}: native feature importance (top 20)")
+        plot_grid_search(cv_results_df, save_path / f"{model_name}_grid_search.png",
+                         model_name, metric=refit_metric)
 
         top_feature_slices = save_top_ranked_feature_slices(
             ranking_df,

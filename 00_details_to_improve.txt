@@ -22,14 +22,13 @@ Specific objectives:
 
 2026-10-08 | INITIAL CODE REVIEW
 
-01. HIGH: Fourier descriptors are unintentionally excluded.
-Files: sl_feature_comparison_tools.py, sl_training_pipeline.py,
-sl_models_evaluation.py. startswith(f) mistakes fourier_* for legacy f0/f1
-aliases. Other descriptive columns take precedence, dropping Fourier columns.
-Default extraction defines 313 values including 20 Fourier descriptors; the
-saved runtime_smoke summary reports 293 detected features.
-Action: Match aliases exactly (e.g. ^f[0-9]+$), share schema logic, verify feature
-order and regenerate affected rankings/models before replacing results.
+01. Align the legacy evaluator with the corrected Fourier naming rule.
+Remaining file: sl_models_evaluation.py still uses startswith("f") and can
+mistake fourier_* for old f0/f1 aliases. The active comparison/training helpers
+now use exact f-plus-digits matching; the October 16 summary confirms 313
+features and a completed replacement batch. Those active-pipeline tasks are
+resolved. Action: Update or retire the legacy evaluator and share the schema
+rule so the naming error cannot reappear through that separate entrypoint.
 
 02. HIGH: Feature selection precedes internal validation splitting.
 Files: sl_feature_comparison.py, sl_training_pipeline.py.
@@ -160,16 +159,16 @@ are old. sl_models_evaluation.py expects older model filenames/labels and does
 not restore current label-encoder metadata.
 Action: Restore/configure intended tools or mark inactive; reuse current loaders.
 
-23. Point comparison at intended DL checkpoints and expose provenance.
-2026-10-10: compare_dl_sl_models.py still loads older checkpoints under
-01_Python/outputs_resnet18_thesis_dl_bbox and
-01_Python/outputs_resnet18_thesis_partial_finetune. The newly trained models
-instead live at project-root outputs_resnet18_thesis and
-outputs_resnet18_thesis_partial_finetune. The family DL CSV therefore does not
-represent the new runs. SL resolves the current validation-selected batch run.
-Action: Make checkpoint paths explicit/configurable, record their hashes and
-configuration in outputs, and regenerate family reports for the intended models.
-Requested-family path checks are already conditional; that old issue is removed.
+23. Preserve model-file identity alongside prediction exports.
+The October 16 runner records explicit --dl-full-model and --dl-partial-model
+arguments in pipeline_runs/run_20261016_022009_994895/status.json and completed
+the family reports. It intentionally reused the historical DL checkpoints;
+the reports must remain distinct from the October 9 project-root DL training.
+Configurable paths and recorded commands are resolved. Remaining action:
+record checkpoint/model hashes, dataset version and the SL run path directly
+with each prediction export. evaluator_sources.csv identifies source CSV paths;
+the short evaluator suffix hashes that path string, not the model contents.
+Preserve the runner status file with the report to retain its current provenance.
 
 24. Integrate segmentation experiments deliberately.
 feature_extraction_analysis.ipynb explores Otsu, GrabCut, HSV and saliency-assisted
@@ -215,6 +214,15 @@ too small for the logos and several pre-existing long URLs exceed the margins.
 These do not prevent a PDF build, but still require formatting review.
 
 FUTURE UPDATES
+29. Complete image-condition review before explaining failure causes.
+2026-10-16: image_error_analysis verifies 894 predictions on 149 shared images,
+including five images with errors in both families. All 149 annotation-template
+condition/note fields are empty; condition_summary.csv has only its header.
+Action: Annotate both correct and incorrect images with observed conditions,
+regenerate condition summaries, and retain denominators. Inspect source photos
+as well as crops before attributing failures to detection or cropping. Save
+photographer/source credits for any example crops reproduced in the thesis.
+
 Append dated findings, sources, implications and recommended actions. Remove
 resolved entries after verification; retain requirements that remain pending in
 code or experimental evidence even when their limitation is explained in main.tex.

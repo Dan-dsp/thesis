@@ -1,0 +1,3 @@
+sample_key,image_path,family,model,true_label,predicted_label,correct
+ocreatus_underwoodii/ML638747115_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\ocreatus_underwoodii\ML638747115_b0.jpg,DL,resnet18_bbox_full_finetune,ocreatus_underwoodii,florisuga_mellivora,False
+ocreatus_underwoodii/ML641755386_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\ocreatus_underwoodii\ML641755386_b0.jpg,DL,resnet18_bbox_full_finetune,ocreatus_underwoodii,setophaga_fusca,False

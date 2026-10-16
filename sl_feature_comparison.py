@@ -18,6 +18,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from result_plots import plot_feature_counts, plot_feature_overlap, plot_feature_scores
 from tqdm import tqdm
 
 from sl_feature_comparison_tools import (
@@ -167,6 +168,12 @@ def compare_filter_method_rankings(
             derived_top_counts=DERIVED_TOP_COUNTS,
         )
         consensus_df.to_csv(comparison_dir / "filter_consensus_full.csv", index=False)
+        plot_feature_scores(consensus_df, "vote_count",
+                            comparison_dir / "filter_consensus_votes.png",
+                            "Filter consensus votes (top 20 in consensus order)")
+        plot_feature_overlap({name: list(values) for name, values in top_sets.items()},
+                             comparison_dir / "filter_pairwise_overlap.png",
+                             f"Filter top-{top_k} agreement")
         pairwise_overlap_df.to_csv(comparison_dir / "filter_pairwise_overlap.csv", index=False)
         consensus_df[consensus_df["majority_vote"]].to_csv(
             comparison_dir / "filter_strict_majority_features.csv",
@@ -213,6 +220,9 @@ def compare_stage_feature_lists(
     if save_dir is not None:
         save_path = ensure_dir(save_dir)
         overlap_df.to_csv(save_path / "stage_feature_overlap.csv", index=False)
+        plot_feature_overlap(stage_feature_lists, save_path / "stage_feature_overlap.png",
+                             "Selection-stage agreement")
+        plot_feature_counts(stage_feature_lists, save_path / "stage_feature_counts.png")
         pd.DataFrame(
             [
                 {"stage_name": stage_name, "n_features": len(features)}
@@ -314,7 +324,7 @@ def export_training_ready_feature_datasets(
             "method_name": method_name,
             "variant": variant,
             "selection_split": SELECTION_SPLIT,
-            "selection_protocol": "train_only_v1",
+            "selection_protocol": "train_only_v2_fourier",
             "n_features": export_info["n_features"],
             "n_rows": export_info["n_rows"],
             "csv_path": export_info["csv_path"],

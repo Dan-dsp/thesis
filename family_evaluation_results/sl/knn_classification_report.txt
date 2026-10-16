@@ -1,0 +1,18 @@
+                         precision    recall  f1-score   support
+
+anisognathus_somptuosus     0.6000    0.5000    0.5455        12
+     chlorophanes_spiza     0.5000    0.0833    0.1429        12
+      colibri_delphinae     0.3077    0.3333    0.3200        12
+    florisuga_mellivora     0.4615    0.4286    0.4444        14
+     myioborus_miniatus     0.7778    0.6364    0.7000        11
+   ocreatus_underwoodii     0.5714    0.6154    0.5926        13
+ ramphocelus_flamigerus     0.7000    0.5000    0.5833        14
+        setophaga_fusca     0.3529    0.4615    0.4000        13
+    stilpnia_vitriolina     0.2857    0.3333    0.3077        12
+         tangara_arthus     0.6154    0.6154    0.6154        13
+       turdus_ignobilis     0.2000    0.2727    0.2308        11
+   zonotrichia_capensis     0.3158    0.5000    0.3871        12
+
+               accuracy                         0.4430       149
+              macro avg     0.4740    0.4400    0.4391       149
+           weighted avg     0.4775    0.4430    0.4427       149

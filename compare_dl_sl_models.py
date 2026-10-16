@@ -22,6 +22,8 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
+from result_plots import plot_matrix, plot_model_metrics
+from image_error_analysis import save_image_predictions, summarize_image_errors
 import torch
 from sklearn.metrics import (
     accuracy_score,
@@ -31,7 +33,7 @@ from sklearn.metrics import (
 )
 from torchvision import datasets, models, transforms
 from torch import nn
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader
 
 
 DL_TEST_DIR = Path(r"F:\01_Univalle\01_TG\dataset_bbox\test")
@@ -40,7 +42,7 @@ SL_BATCH_ROOT = Path(r"F:\01_Univalle\01_TG\sl_outputs_batch")
 
 DL_MODELS = {
     "resnet18_bbox_full_finetune": Path(
-        r"F:\01_Univalle\01_TG\01_Python\outputs_resnet18_thesis_dl_bbox"
+        r"F:\01_Univalle\01_TG\01_Python\outputs_resnet18_thesis"
         r"\final_train\bird_species_resnet18_FINAL_best.pth"
     ),
     "resnet18_bbox_partial_finetune": Path(
@@ -63,6 +65,7 @@ class EvalResult:
     f1_macro: float
     report_text: str
     confusion_matrix: np.ndarray
+    class_names: list[str] | None = None
 
     def as_row(self) -> dict[str, Any]:
         return {
@@ -168,6 +171,7 @@ def compute_metrics(
         f1_macro=float(f1),
         report_text=report,
         confusion_matrix=cm,
+        class_names=class_names,
     )
 
 
@@ -180,6 +184,7 @@ def evaluate_dl_model(
     num_workers: int,
     balance_test: bool,
     seed: int,
+    audit_dir: Path | None = None,
 ) -> EvalResult:
     checkpoint = torch_load_checkpoint(model_path, device)
     class_names = list(checkpoint["class_names"])
@@ -192,13 +197,9 @@ def evaluate_dl_model(
             f"Test folder classes: {test_dataset.classes}"
         )
 
-    dataset_for_loader: Any = test_dataset
-    if balance_test:
-        selected = balanced_indices(np.asarray(test_dataset.targets), seed=seed)
-        dataset_for_loader = Subset(test_dataset, selected.tolist())
-
+    # Predict every image for error inspection; balance only the metric table.
     loader = DataLoader(
-        dataset_for_loader,
+        test_dataset,
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
@@ -222,7 +223,16 @@ def evaluate_dl_model(
 
     y_true = np.asarray([class_names[idx] for idx in y_true_ids])
     y_pred = np.asarray([class_names[idx] for idx in y_pred_ids])
-    return compute_metrics("DL", model_name, y_true, y_pred, class_names)
+    if audit_dir is not None:
+        metadata = pd.DataFrame([
+            {"sample_key": f"{class_names[target]}/{Path(path).name}", "image_path": path}
+            for path, target in test_dataset.samples
+        ])
+        save_image_predictions(audit_dir / f"{model_name}_test_predictions.csv",
+                               "DL", model_name, metadata, y_true, y_pred)
+    selected = (balanced_indices(np.asarray(test_dataset.targets), seed=seed) if balance_test
+                else np.arange(len(y_true)))
+    return compute_metrics("DL", model_name, y_true[selected], y_pred[selected], class_names)
 
 
 def load_sl_metadata(run_dir: Path) -> tuple[list[str], list[str], Any]:
@@ -331,6 +341,9 @@ def evaluate_sl_model(
     y_test: np.ndarray,
     class_names: list[str],
     label_encoder: Any,
+    metadata: pd.DataFrame | None = None,
+    audit_dir: Path | None = None,
+    evaluation_indices: np.ndarray | None = None,
 ) -> EvalResult:
     model = joblib.load(model_path)
     if not hasattr(model, "predict"):
@@ -345,7 +358,17 @@ def evaluate_sl_model(
 
     raw_predictions = model.predict(X_test)
     y_pred = decode_sl_predictions(raw_predictions, label_encoder)
-    return compute_metrics("SL", model_name, y_test, y_pred, class_names)
+    if audit_dir is not None:
+        if metadata is None or "orig_filename" not in metadata:
+            raise ValueError("SL error analysis needs original image filenames in the test CSVs.")
+        images = metadata.copy()
+        images["sample_key"] = images.species.astype(str) + "/" + images.orig_filename.astype(str)
+        images["image_path"] = [str(DL_TEST_DIR / str(species) / str(filename))
+                                for species, filename in zip(images.species, images.orig_filename)]
+        save_image_predictions(audit_dir / f"{model_name}_test_predictions.csv",
+                               "SL", model_name, images[["sample_key", "image_path"]], y_test, y_pred)
+    selected = evaluation_indices if evaluation_indices is not None else np.arange(len(y_test))
+    return compute_metrics("SL", model_name, y_test[selected], y_pred[selected], class_names)
 
 
 def print_result(result: EvalResult) -> None:
@@ -369,6 +392,10 @@ def save_outputs(results: list[EvalResult], output_dir: Path) -> None:
         family_dir = output_dir / family.lower()
         family_dir.mkdir(parents=True, exist_ok=True)
         table.sort_values("model").to_csv(family_dir / "summary_metrics.csv", index=False)
+        plot_model_metrics(table.sort_values("model"),
+                           {"accuracy": "Accuracy", "f1_macro": "Macro-F1",
+                            "precision_macro": "Macro precision", "recall_macro": "Macro recall"},
+                           family_dir / "summary_metrics.png", f"{family}: held-out test metrics")
 
     for result in results:
         safe_name = result.model
@@ -381,6 +408,11 @@ def save_outputs(results: list[EvalResult], output_dir: Path) -> None:
             family_dir / f"{safe_name}_confusion_matrix.csv",
             index=False,
         )
+        labels = (result.class_names if result.class_names is not None else
+                  [str(i) for i in range(len(result.confusion_matrix))])
+        plot_matrix(result.confusion_matrix, labels,
+                    family_dir / f"{safe_name}_confusion_matrix.png", f"{result.family}: {safe_name}",
+                    xlabel="Predicted class", ylabel="True class")
 
     print("\n" + "=" * 80)
     print("Independent family reports; cross-family metrics are descriptive only")
@@ -416,11 +448,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-dl", action="store_true")
     parser.add_argument("--skip-sl", action="store_true")
     parser.add_argument("--sl-run-dir", type=Path, help="A reduced-feature SL run.")
+    parser.add_argument("--dl-full-model", type=Path,
+                        default=DL_MODELS["resnet18_bbox_full_finetune"],
+                        help="Full-fine-tuning checkpoint (override for historical output folders).")
+    parser.add_argument("--dl-partial-model", type=Path,
+                        default=DL_MODELS["resnet18_bbox_partial_finetune"],
+                        help="Partial-fine-tuning checkpoint.")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    dl_models = {"resnet18_bbox_full_finetune": args.dl_full_model,
+                 "resnet18_bbox_partial_finetune": args.dl_partial_model}
     sl_models = {}
     sl_run_dir = args.sl_run_dir
     if not args.skip_sl:
@@ -435,7 +475,7 @@ def main() -> None:
 
     if not args.skip_dl:
         assert_existing_path(DL_TEST_DIR, "DL test data", is_dir=True)
-        for name, path in DL_MODELS.items():
+        for name, path in dl_models.items():
             assert_existing_path(path, f"DL model '{name}'")
     if not args.skip_sl:
         assert_existing_path(SL_TEST_DIR, "SL test data", is_dir=True)
@@ -448,9 +488,10 @@ def main() -> None:
     print(f"[INFO] Balance test: {args.balance_test}")
 
     results: list[EvalResult] = []
+    prediction_paths: list[Path] = []
 
     if not args.skip_dl:
-        for model_name, model_path in DL_MODELS.items():
+        for model_name, model_path in dl_models.items():
             print(f"\n[INFO] Evaluating DL model: {model_name}")
             result = evaluate_dl_model(
                 model_name=model_name,
@@ -461,20 +502,25 @@ def main() -> None:
                 num_workers=args.num_workers,
                 balance_test=args.balance_test,
                 seed=args.seed,
+                audit_dir=args.output_dir / "dl" / "predictions",
             )
             print_result(result)
             results.append(result)
+            prediction_paths.append(args.output_dir / "dl" / "predictions" /
+                                    f"{model_name}_test_predictions.csv")
 
     if not args.skip_sl:
         feature_columns, class_names, label_encoder = load_sl_metadata(sl_run_dir)
-        X_test, y_test, _ = load_sl_test_data(
+        X_test, y_test, test_metadata = load_sl_test_data(
             test_dir=SL_TEST_DIR,
             feature_columns=feature_columns,
             class_names=class_names,
-            balance_test=args.balance_test,
+            balance_test=False,
             seed=args.seed,
         )
         print(f"\n[INFO] SL test matrix: {X_test.shape}")
+        selected = (balanced_indices(y_test, seed=args.seed) if args.balance_test
+                    else np.arange(len(y_test)))
 
         for model_name, model_path in sl_models.items():
             print(f"\n[INFO] Evaluating SL model: {model_name}")
@@ -485,14 +531,23 @@ def main() -> None:
                 y_test=y_test,
                 class_names=class_names,
                 label_encoder=label_encoder,
+                metadata=test_metadata,
+                audit_dir=args.output_dir / "sl" / "predictions",
+                evaluation_indices=selected,
             )
             print_result(result)
             results.append(result)
+            prediction_paths.append(args.output_dir / "sl" / "predictions" /
+                                    f"{model_name}_test_predictions.csv")
 
     if not results:
         raise RuntimeError("No models were evaluated.")
 
     save_outputs(results, args.output_dir)
+    review_dir = args.output_dir / "image_error_analysis"
+    overview = summarize_image_errors(prediction_paths, review_dir, image_root=DL_TEST_DIR)
+    print(f"\n[IMAGE ERRORS] {len(overview)} unique test images inspected without rejection.")
+    print(f"[IMAGE ERRORS] Open: {(review_dir / 'error_gallery.html').resolve()}")
 
 
 if __name__ == "__main__":

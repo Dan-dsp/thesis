@@ -1,0 +1,7 @@
+evaluator,family,model,source
+DL/resnet18_bbox_full_finetune@1f623b46,DL,resnet18_bbox_full_finetune,F:\01_Univalle\01_TG\01_Python\family_evaluation_results\dl\predictions\resnet18_bbox_full_finetune_test_predictions.csv
+DL/resnet18_bbox_partial_finetune@40cad6b8,DL,resnet18_bbox_partial_finetune,F:\01_Univalle\01_TG\01_Python\family_evaluation_results\dl\predictions\resnet18_bbox_partial_finetune_test_predictions.csv
+SL/knn@3a3c78a2,SL,knn,F:\01_Univalle\01_TG\01_Python\family_evaluation_results\sl\predictions\knn_test_predictions.csv
+SL/random_forest@0d204c40,SL,random_forest,F:\01_Univalle\01_TG\01_Python\family_evaluation_results\sl\predictions\random_forest_test_predictions.csv
+SL/svm_rbf@ca96fc07,SL,svm_rbf,F:\01_Univalle\01_TG\01_Python\family_evaluation_results\sl\predictions\svm_rbf_test_predictions.csv
+SL/xgboost@00ce0160,SL,xgboost,F:\01_Univalle\01_TG\01_Python\family_evaluation_results\sl\predictions\xgboost_test_predictions.csv

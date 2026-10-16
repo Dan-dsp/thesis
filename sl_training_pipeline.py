@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import time
 from contextlib import contextmanager
 from datetime import datetime
@@ -29,6 +30,7 @@ from typing import Any, Dict, Tuple
 import joblib
 import numpy as np
 import pandas as pd
+from result_plots import plot_grid_search, plot_model_metrics
 from classification_analysis import (
     choose_rejection_policy, describe_sl_model, save_json, save_prediction_audit, sl_predictions,
 )
@@ -140,11 +142,11 @@ def get_feature_columns(df: pd.DataFrame) -> list[str]:
 
     legacy_f_cols = [
         c for c in numeric_cols
-        if c.startswith("f") and c not in DUPLICATE_LEGACY_FEATURES
+        if re.fullmatch(r"f[0-9]+", c) and c not in DUPLICATE_LEGACY_FEATURES
     ]
     descriptive_cols = [
         c for c in numeric_cols
-        if not c.startswith("f") and c not in DUPLICATE_DESCRIPTIVE_FEATURES
+        if not re.fullmatch(r"f[0-9]+", c) and c not in DUPLICATE_DESCRIPTIVE_FEATURES
     ]
 
     if descriptive_cols:
@@ -247,8 +249,11 @@ def load_training_ready_manifest(manifest_csv_path: str | Path) -> pd.DataFrame:
     if manifest_df.empty:
         raise ValueError(f"Manifest has no dataset rows: {manifest_path}")
     if not (manifest_df.selection_split.eq("train") &
-            manifest_df.selection_protocol.eq("train_only_v1")).all():
-        raise ValueError("Regenerate selected datasets with sl_feature_comparison.py first.")
+            manifest_df.selection_protocol.eq("train_only_v2_fourier")).all():
+        raise ValueError(
+            "Regenerate selected datasets with sl_feature_comparison.py first. "
+            "Older selection protocols excluded descriptive Fourier features."
+        )
 
     return manifest_df
 
@@ -390,7 +395,7 @@ def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42)
     # Record which column naming convention was used for downstream inspection.
     feature_schema = (
         "descriptive"
-        if feature_cols and any(not c.startswith("f") for c in feature_cols)
+        if feature_cols and any(not re.fullmatch(r"f[0-9]+", c) for c in feature_cols)
         else "legacy_f"
     )
 
@@ -845,6 +850,8 @@ def run_training_pipeline(
         # These are search diagnostics, not independent outer-CV evidence.
         pd.DataFrame(gs.cv_results_).to_csv(
             run_dir / f"{model_name}_grid_search.csv", index=False)
+        plot_grid_search(pd.DataFrame(gs.cv_results_),
+                         cm_dir / f"{model_name}_grid_search.png", model_name, metric=scoring)
 
         print(f"[INFO] Best {model_name} params: {gs.best_params_}")
         print(f"[INFO] Best {model_name} CV {scoring}: {gs.best_score_:.4f}")
@@ -970,6 +977,14 @@ def run_training_pipeline(
 
     val_df.to_csv(run_dir / "internal_validation_comparison.csv", index=False)
     test_df.to_csv(run_dir / "test_comparison.csv", index=False)
+    plot_model_metrics(val_df, {"val_accuracy": "Accuracy", "val_f1_macro": "Macro-F1",
+                               "val_precision_macro": "Macro precision",
+                               "val_recall_macro": "Macro recall"},
+                       cm_dir / "internal_validation_metrics.png", "SL internal validation (balanced)")
+    plot_model_metrics(test_df, {"test_accuracy": "Accuracy", "test_f1_macro": "Macro-F1",
+                                "test_precision_macro": "Macro precision",
+                                "test_recall_macro": "Macro recall"},
+                       cm_dir / "test_metrics.png", "SL held-out test (balanced)")
     selected_name = str(val_df.iloc[0]["model"])
     save_json(run_dir / "selected_model.json", {
         "family": "SL", "selected_by": "internal_validation_f1_macro",

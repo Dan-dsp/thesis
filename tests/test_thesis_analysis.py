@@ -93,6 +93,9 @@ class ThesisAnalysisTests(unittest.TestCase):
             self.assertFalse((root / "summary_metrics.csv").exists())
             self.assertTrue((root / "sl" / "summary_metrics.csv").exists())
             self.assertTrue((root / "dl" / "summary_metrics.csv").exists())
+            for family in ["sl", "dl"]:
+                self.assertTrue((root / family / "summary_metrics.png").exists())
+                self.assertTrue((root / family / "m_confusion_matrix.png").exists())
 
     def test_legacy_selection_manifest_requires_regeneration(self):
         from sl_training_pipeline import load_training_ready_manifest
@@ -168,6 +171,9 @@ class ThesisAnalysisTests(unittest.TestCase):
             predictions = pd.read_csv(run / "predictions" / "svm_rbf_test_predictions.csv")
             self.assertEqual(len(predictions), 12)
             self.assertTrue((run / "svm_rbf_model_analysis.json").exists())
+            for name in ["svm_rbf_grid_search.png", "internal_validation_metrics.png",
+                         "test_metrics.png"]:
+                self.assertTrue((run / "cm" / name).exists())
 
     def test_dl_policy_uses_best_checkpoint(self):
         import torch
@@ -228,6 +234,9 @@ class ThesisAnalysisTests(unittest.TestCase):
                                                   finetune_epochs=1)
                 scores = pd.read_csv(out / "outer_cv_scores.csv")
                 self.assertEqual(len(scores), 3)
+                self.assertTrue((out / "outer_cv_scores.png").exists())
+                for i in range(1, 4):
+                    self.assertTrue((out / f"outer_fold_{i}_cm.png").exists())
                 self.assertTrue(scores.evaluation_role.eq("independent_outer").all())
                 keys = pd.concat([pd.read_csv(out / f"outer_predictions_fold_{i}.csv")
                                   for i in range(1, 4)]).sample_key

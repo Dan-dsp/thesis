@@ -171,72 +171,18 @@ def export_dl_test_audit(model, loader, dataset, indices, device, checkpoint, ou
                                  confidence, policy)
 
 
-def summarize_errors(paths, out_dir, annotations=None):
-    """Descriptive overlap only, with bird identity supplied explicitly by users."""
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    tables = []
-    for path in paths:
-        table = pd.read_csv(path)
-        required = {"sample_key", "family", "model", "true_label", "predicted_label", "correct"}
-        if not required.issubset(table):
-            raise ValueError(f"Missing prediction columns in {path}")
-        if table.duplicated(["family", "model", "sample_key"]).any():
-            raise ValueError(f"Duplicate image predictions in {path}")
-        table["source"] = str(Path(path).resolve())
-        tables.append(table)
-    joined = pd.concat(tables, ignore_index=True)
-    annotation = pd.DataFrame({"sample_key": sorted(joined.sample_key.unique())})
-    annotation["bird_id"] = ""
-    annotation["conditions"] = ""
-    annotation["notes"] = ""
-    annotation.to_csv(out_dir / "annotation_template.csv", index=False)
-    if annotations:
-        annotated = pd.read_csv(annotations)
-        if annotated.sample_key.duplicated().any():
-            raise ValueError("Annotation sample_key must be unique.")
-        joined = joined.merge(annotated, on="sample_key", how="left", validate="many_to_one")
-    joined.to_csv(out_dir / "all_predictions.csv", index=False)
-    groups = joined.groupby("sample_key")
-    overview = groups.agg(evaluations=("correct", "size"), correct_count=("correct", "sum"))
-    overview["error_count"] = overview.evaluations - overview.correct_count
-    overview.to_csv(out_dir / "image_error_frequency.csv")
-    overlap = []
-    sources = list(joined.source.unique())
-    for left_idx, left in enumerate(sources):
-        left_rows = joined.loc[joined.source.eq(left)].set_index("sample_key")
-        for right in sources[left_idx + 1:]:
-            right_rows = joined.loc[joined.source.eq(right)].set_index("sample_key")
-            common = left_rows.index.intersection(right_rows.index)
-            both_wrong = (~left_rows.loc[common, "correct"] &
-                          ~right_rows.loc[common, "correct"])
-            overlap.append({"left_source": left, "right_source": right,
-                            "common_images": len(common),
-                            "same_image_errors": int(both_wrong.sum())})
-    pd.DataFrame(overlap).to_csv(out_dir / "descriptive_error_overlap.csv", index=False)
-    errors = joined.loc[~joined["correct"]]
-    errors.to_csv(out_dir / "error_review.csv", index=False)
-    if "bird_id" in joined:
-        identified = joined.dropna(subset=["bird_id"])
-        identified = identified.loc[identified.bird_id.astype(str).str.strip().ne("")]
-        identified.groupby("bird_id").agg(evaluations=("correct", "size"),
-                                          accuracy=("correct", "mean")).to_csv(
-                                              out_dir / "bird_error_summary.csv")
-    if "conditions" in joined:
-        tagged = joined.dropna(subset=["conditions"]).copy()
-        tagged["condition"] = tagged.conditions.astype(str).str.split(";")
-        tagged = tagged.explode("condition")
-        tagged["condition"] = tagged.condition.str.strip()
-        tagged = tagged.loc[tagged.condition.ne("")]
-        tagged.groupby(["family", "model", "condition"]).agg(
-            samples=("correct", "size"), accuracy=("correct", "mean")).to_csv(
-                out_dir / "condition_summary.csv")
+def summarize_errors(paths, out_dir, annotations=None, image_root=None):
+    """Inspect raw species errors on matching image IDs; rejection is not used."""
+    from image_error_analysis import summarize_image_errors
+
+    return summarize_image_errors(paths, out_dir, annotations, image_root)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Inspect image and bird errors descriptively.")
+    parser = argparse.ArgumentParser(description="Inspect matching-image classification errors.")
     parser.add_argument("predictions", nargs="+", type=Path)
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--annotations", type=Path)
+    parser.add_argument("--image-root", type=Path, help="Test images rooted at species/filename.")
     args = parser.parse_args()
-    summarize_errors(args.predictions, args.out_dir, args.annotations)
+    summarize_errors(args.predictions, args.out_dir, args.annotations, args.image_root)
