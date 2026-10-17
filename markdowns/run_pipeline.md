@@ -1,88 +1,69 @@
-# `run_pipeline.py`
+# run_pipeline.py
 
-Sequential launcher for existing scripts. Run it from any working directory, or
-open this file in VS Code and click Run Python File. The launcher uses the same
-Python interpreter as itself and sets every child's working directory to
-`01_Python`. It never starts training stages in parallel.
-
-## Recommended Current Run
-
-From `F:/01_Univalle/01_TG`:
+The default is now a complete SL/DL experiment rebuild, not SL-only refresh with
+old DL checkpoints. Run from `F:/01_Univalle/01_TG`:
 
 ```powershell
 python 01_Python/run_pipeline.py
 ```
 
-Default sequence:
-1. `sl_feature_comparison.py`: train-only feature selection, including Fourier features.
-2. `sl_training_pipeline.py --run-exported-batch`: train/test every exported feature variant.
-3. `compare_dl_sl_models.py`: reuse saved DL checkpoints, evaluate both families independently,
-   and generate the shared-image error gallery and tables.
+Opening `run_pipeline.py` and clicking Run Python File does the same thing.
+The existing filename is `run_pipeline.py`, not `run_pipelin.py`.
 
-Extraction is skipped because the saved full feature table already contains the
-Fourier descriptors. DL retraining is skipped because the SL name-filtering fix
-does not affect DL. The default explicitly uses your historical bbox full-DL
-checkpoint in `outputs_resnet18_thesis_dl_bbox`, and the saved partial-fine-tuning
-checkpoint. It prints the paths before running; it never picks the no-bbox model.
+## Default Sequence
 
-## Other Modes
+1. Verify the shared balanced original-image pool (`shared_training_pool.py`).
+2. Generate two reproducible shared image views (`shared_augmentation.py`).
+3. Re-extract original and augmented descriptors (`sl_dataframe_main.py`).
+4. Train/CV/evaluate full-fine-tuning DL.
+5. Train/CV/evaluate partial-fine-tuning DL.
+6. Select SL features on original balanced train rows and export reduced CSVs.
+7. Train/test the exported SL batch with fitting-only augmented descriptors.
+8. Run independent nested SL CV, MI top-50, for the four classifiers available.
+9. Analyze SL outer-fold scores within the SL family.
+10. Analyze DL outer-fold scores within the DL family.
+11. Evaluate saved models and generate shared-image error tables/HTML gallery.
+
+Nested SL MI top-50 CV is not independent CV for every one of the 29 variants.
+No combined SL/DL significance test is performed. Final reporting uses newly
+trained DL checkpoints in `outputs_resnet18_thesis` and
+`outputs_resnet18_thesis_partial_finetune`, and the newly generated SL batch.
+
+## Options
 
 ```powershell
 python 01_Python/run_pipeline.py --dry-run
-python 01_Python/run_pipeline.py --full
+python 01_Python/run_pipeline.py --skip-statistics
 python 01_Python/run_pipeline.py --reports-only
 ```
 
-`--dry-run` only prints the plan; no stages run and no files are written.
+- `--dry-run`: print commands without checks, training or file writes.
+- `--skip-statistics`: omit nested SL CV and both statistical-analysis commands;
+  the DL trainers still run their enabled CV stages.
+- `--full` and `--with-statistics`: retained explicit aliases for default behavior.
+- `--reports-only`: inference/reporting on existing artifacts only. Its full-DL
+  default is the rebuilt checkpoint under `outputs_resnet18_thesis`. Historical
+  checkpoints need an explicit `--dl-full-model path/to/model.pth` override.
+  Checkpoint overrides are permitted
+  only in reports-only mode. Old reports do not establish the new augmentation
+  protocol was used.
 
-`--full` adds handcrafted-feature extraction and both DL training scripts before
-SL selection/training and reporting. DL includes CV with the trainers' current
-RUN_KFOLD settings. The final comparison uses the newly generated checkpoints,
-not the historical full-DL checkpoint. This mode can take many hours and overwrites
-the trainers' fixed DL output files. Existing SL batches remain timestamped.
+## Runtime And Outputs
 
-`--reports-only` reuses saved SL/DL models and performs inference/reporting only.
-It does not correct outdated SL feature selection or retrain old models.
+This is a long training run, potentially many hours. It overwrites fixed DL
+output files and extracted feature CSVs. SL batches retain timestamped folders.
+Augmented samples increase fitting costs; selection rankings still use originals.
 
-Use `--dl-full-model path/to/model.pth` and `--dl-partial-model path/to/model.pth`
-to override saved checkpoints in default or report-only mode. Relative paths are
-resolved from `01_Python`. Overrides are refused with `--full`, to avoid comparing
-old checkpoints after retraining new ones.
+Every stage runs sequentially with the launcher's Python interpreter and
+`01_Python` working directory. `pipeline_runs/run_TIMESTAMP/` stores terminal
+logs and `status.json` with commands, durations and completion/failure status.
+Failures stop subsequent stages. Restarting does not automatically resume.
 
-## Statistical Analysis
+The HTML report is:
+`01_Python/family_evaluation_results/image_error_analysis/error_gallery.html`.
 
-```powershell
-python 01_Python/run_pipeline.py --full --with-statistics
-```
-
-Adds nested SL CV with MI top-50, SL within-family statistics, and DL within-family
-statistics. The nested SL protocol is not an independent test of all 29 exported
-variants. No joint SL/DL significance test is run. In default mode, this option
-requires existing independent DL outer-CV scores; otherwise use the full mode.
-It cannot be combined with `--reports-only`, since nested CV trains models.
-
-## Failure Handling and Logs
-
-Input scripts and reused DL checkpoints are checked before long-running stages.
-Every stage must finish successfully before the next starts. On failure or a
-keyboard interruption, later stages do not run. Inspect:
-
-`01_Python/pipeline_runs/run_TIMESTAMP/`
-
-Each stage has a UTF-8 terminal log, and `status.json` records the exact commands,
-completion/failure status and elapsed time. The launcher does not automatically
-resume failed runs or skip earlier completed stages on restart.
-
-## Local HTML Report
-
-After successful evaluation, open:
-
-`01_Python/family_evaluation_results/image_error_analysis/error_gallery.html`
-
-This is a local HTML file, not a hosted website. It only exists after reporting
-finishes. Double-click it or open it in your browser. It reads images from local
-disk, so keep their paths available. See [Image Error Analysis](image_error_analysis.md).
-
-No mode splits the dataset, changes train/test assignments or reruns the bird
-detector/cropping stage. All modes assume `dataset_bbox/train` and `dataset_bbox/test`
-are prepared. Rejection behavior is not modified by this launcher.
+No detector, crop, rename or original train/test splitting stages are rerun.
+Prepared `dataset_bbox/train` and `dataset_bbox/test` remain prerequisites.
+No validation-assignment file is precreated. Rejection behavior is unchanged.
+See [Shared Augmentation](shared_augmentation.md) for sampling, seed controls,
+fold isolation and remaining methodological limitations.

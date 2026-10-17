@@ -25,6 +25,8 @@ This index covers only `.py` files directly inside `01_Python`.
 | `sl_training_pipeline.py` | Trains and evaluates classical ML models | SL training |
 | `sl_main.py` | Runs selected SL stages in order | SL orchestrator |
 | `run_pipeline.py` | Sequential SL/DL training and reporting launcher with saved logs | Pipeline orchestration |
+| `shared_training_pool.py` | DL-ordered balanced image list reused by all SL/DL training stages | Shared training population |
+| `shared_augmentation.py` | Fixed image views shared by SL/DL; runtime fitting-only expansion | Shared augmentation |
 | `sl_models_evaluation.py` | Extra plotting and evaluation utilities | Older SL helper |
 
 The current end-to-end SL route is `sl_dataframe_main.py` -> `sl_feature_comparison.py` -> `sl_training_pipeline.py`, optionally launched by `sl_main.py`.

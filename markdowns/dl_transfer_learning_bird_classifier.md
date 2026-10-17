@@ -1,5 +1,18 @@
 # `dl_transfer_learning_bird_classifier.py`
 
+Training now uses originals plus the exact saved image views also used by SL.
+Extra online random flips/rotations/color jitter are disabled. Runtime fitting
+subsets get their originals' views; validation, outer folds and test use only
+originals. No validation assignment is precreated. Final training resets its
+seed independently of CV; cuDNN deterministic mode is enabled. Old checkpoints
+must be retrained for this augmentation protocol.
+See [Shared Augmentation](shared_augmentation.md).
+
+Train undersampling now creates/reuses the persistent shared image list also
+consumed by SL. The original DL sample selection and RNG order are unchanged.
+Final/CV folders save training_pool.csv/JSON; final output also saves actual
+internal split membership. See [Shared Training Pool](shared_training_pool.md).
+
 Existing loss/accuracy curves and test confusion matrices remain. New independent
 outer-fold confusion matrices and `outer_cv_scores.png` are saved in
 `kfold_train_only`. Saved plots use the non-GUI Agg backend.

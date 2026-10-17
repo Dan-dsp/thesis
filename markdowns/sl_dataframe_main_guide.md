@@ -1,5 +1,11 @@
 # `sl_dataframe_main.py` Guide
 
+Current augmentation update: shared_augmentation.py must run first. The entrypoint
+extracts descriptors from its fixed PNG views as well as the original image
+folders. These rows are marked train_augmented and carry parent/protocol IDs;
+they are used only for fitting, not held-out scoring or feature rankings.
+See [Shared Augmentation](shared_augmentation.md) for the current rebuild order.
+
 This file is the entrypoint for building the shallow-learning feature dataset.
 
 It does not define the feature-extraction logic itself. Instead, it configures paths and options, then calls [sl_dataframe_construction.py](../sl_dataframe_construction.py) to do the real work.

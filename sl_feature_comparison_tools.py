@@ -22,6 +22,8 @@ from typing import Any, cast
 import numpy as np
 import pandas as pd
 from result_plots import plot_feature_scores, plot_grid_search, plot_rfecv
+from shared_training_pool import select_training_rows
+from shared_augmentation import METADATA as AUGMENTATION_METADATA, validate_feature_augmentation
 from joblib import parallel
 from scipy.stats import shapiro
 from tqdm import tqdm
@@ -41,8 +43,8 @@ from sklearn.svm import SVC
 
 
 # Columns that describe a sample instead of representing a predictor variable.
-METADATA_COLUMNS = {"sample_id", "sample_name", "orig_filename", "species", "split"}
-METADATA_COLUMN_ORDER = ("sample_id", "sample_name", "orig_filename", "species", "split")
+METADATA_COLUMNS = {"sample_id", "sample_name", "orig_filename", "species", "split", *AUGMENTATION_METADATA}
+METADATA_COLUMN_ORDER = ("sample_id", "sample_name", "orig_filename", "species", "split", *AUGMENTATION_METADATA)
 EXCLUDED_FEATURE_PREFIXES: tuple[str, ...] = ()
 DUPLICATE_DESCRIPTIVE_FEATURES = {"affine_6"}
 DUPLICATE_LEGACY_FEATURES = {"f39"}
@@ -230,6 +232,8 @@ def load_features_and_labels(
     csv_path: str,
     label_col: str = "species",
     selection_split: str | None = None,
+    pool_manifest_path: str | Path | None = None,
+    seed: int = 42,
 ) -> tuple[pd.DataFrame, np.ndarray, np.ndarray, list[str]]:
     """
     Load the dataset and return a cleaned feature matrix plus labels.
@@ -239,6 +243,11 @@ def load_features_and_labels(
     row so selected columns can later be exported for train and test.
     """
     df = pd.read_csv(csv_path)
+    pool_info = None
+    if pool_manifest_path is not None:
+        df, pool_info = select_training_rows(df, seed=seed, manifest_path=pool_manifest_path)
+        validate_feature_augmentation(df, pool_manifest_path)
+    df.attrs["training_pool"] = pool_info
     feature_names = get_feature_columns(df, label_col=label_col)
 
     if not feature_names:
@@ -524,12 +533,13 @@ def compute_mutual_information(
     y: np.ndarray,
     feature_names: list[str],
     save_dir: str | Path | None = None,
+    seed: int = 42,
 ) -> pd.DataFrame:
     """Estimate the non-linear information each continuous feature carries about labels."""
     # Mutual information can capture relationships that are not linear.
     # sklearn scales continuous columns internally for this k-neighbor estimate,
     # so this helper intentionally does not fit another external scaler.
-    mi = mutual_info_classif(X, y, discrete_features=False, random_state=42)
+    mi = mutual_info_classif(X, y, discrete_features=False, random_state=seed)
     result = pd.DataFrame({
         "feature": feature_names,
         "mutual_info": mi,
@@ -558,6 +568,7 @@ def run_pca_analysis(
     n_components: int = 3,
     standardize: bool = True,
     save_dir: str | Path | None = None,
+    seed: int = 42,
 ) -> tuple[PCA, pd.DataFrame]:
     # Work on a copy because standardization must not alter the caller's matrix.
     X_proc = np.array(X, dtype=np.float64, copy=True)
@@ -569,7 +580,7 @@ def run_pca_analysis(
         X_proc = scaler.fit_transform(X_proc)
 
     n_components = min(n_components, X_proc.shape[1])
-    pca = PCA(n_components=n_components)
+    pca = PCA(n_components=n_components, random_state=seed)
     pca.fit(X_proc)
 
     loadings = pca.components_.T

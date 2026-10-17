@@ -12,7 +12,7 @@ Workflow:
 2) Build an internal validation split from the TRAIN rows only
 3) Hyperparameter search on the internal TRAIN subset (Stratified K-Fold CV)
 4) Evaluate best model on the internal VAL subset
-5) Refit best model on the full original TRAIN split, evaluate once on TEST
+5) Refit best model on the shared balanced TRAIN pool, evaluate once on TEST
 6) Save models, metrics, confusion matrices, and run metadata
 """
 
@@ -30,7 +30,14 @@ from typing import Any, Dict, Tuple
 import joblib
 import numpy as np
 import pandas as pd
+from shared_augmentation import (
+    METADATA as AUGMENTATION_METADATA, TrainingOnlyAugmentationCV,
+    expanded_training_indices, validate_feature_augmentation,
+)
 from result_plots import plot_grid_search, plot_model_metrics
+from shared_training_pool import (
+    DEFAULT_POOL_MANIFEST, SELECTION_PROTOCOL, get_training_pool, save_pool_record, select_training_rows,
+)
 from classification_analysis import (
     choose_rejection_policy, describe_sl_model, save_json, save_prediction_audit, sl_predictions,
 )
@@ -69,7 +76,7 @@ DEFAULT_TRAINING_READY_MANIFEST_PATH = Path(
 )
 DEFAULT_BATCH_OUT_DIR = Path(r"F:/01_Univalle/01_TG/sl_outputs_batch")
 
-METADATA_COLUMNS = {"sample_id", "sample_name", "orig_filename", "species", "split"}
+METADATA_COLUMNS = {"sample_id", "sample_name", "orig_filename", "species", "split", *AUGMENTATION_METADATA}
 DUPLICATE_DESCRIPTIVE_FEATURES = {"affine_6"}
 DUPLICATE_LEGACY_FEATURES = {"f39"}
 
@@ -227,7 +234,7 @@ def prepare_run_output_dirs(output_root: Path) -> dict[str, Path]:
     }
 
 
-def load_training_ready_manifest(manifest_csv_path: str | Path) -> pd.DataFrame:
+def load_training_ready_manifest(manifest_csv_path: str | Path, expected_pool_id=None) -> pd.DataFrame:
     """Load and validate the feature-dataset manifest created by comparison/export code."""
     # The manifest connects feature-selection outputs to batch model training.
     manifest_path = Path(manifest_csv_path)
@@ -238,7 +245,7 @@ def load_training_ready_manifest(manifest_csv_path: str | Path) -> pd.DataFrame:
 
     manifest_df = pd.read_csv(manifest_path)
     required_columns = {"family", "method_name", "variant", "csv_path",
-                        "selection_split", "selection_protocol"}
+                        "selection_split", "selection_protocol", "training_pool_id"}
     missing_columns = required_columns - set(manifest_df.columns)
     if missing_columns:
         missing_text = ", ".join(sorted(missing_columns))
@@ -249,11 +256,16 @@ def load_training_ready_manifest(manifest_csv_path: str | Path) -> pd.DataFrame:
     if manifest_df.empty:
         raise ValueError(f"Manifest has no dataset rows: {manifest_path}")
     if not (manifest_df.selection_split.eq("train") &
-            manifest_df.selection_protocol.eq("train_only_v2_fourier")).all():
+            manifest_df.selection_protocol.eq(SELECTION_PROTOCOL)).all():
         raise ValueError(
             "Regenerate selected datasets with sl_feature_comparison.py first. "
-            "Older selection protocols excluded descriptive Fourier features."
+            "Older selection protocols did not use the shared balanced DL training pool."
         )
+    ids = manifest_df.training_pool_id.astype(str)
+    if not ids.str.fullmatch(r"[0-9a-f]{64}").all() or ids.nunique() != 1:
+        raise ValueError("Regenerate exports: one valid shared training_pool_id is required.")
+    if expected_pool_id is not None and not ids.eq(expected_pool_id).all():
+        raise ValueError("Regenerate selection: exported training pool differs from the current DL pool.")
 
     return manifest_df
 
@@ -310,7 +322,8 @@ def annotate_comparison_table(
     return annotated_df
 
 
-def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42) -> Dict[str, Any]:
+def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42,
+                       pool_manifest_path: str | Path | None = DEFAULT_POOL_MANIFEST) -> Dict[str, Any]:
     """Load one feature CSV and prepare train, internal validation, and untouched test arrays.
 
     Only original ``train`` rows are split for validation. Original ``test``
@@ -318,6 +331,8 @@ def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42)
     """
     # The original test split stays untouched; validation comes only from train.
     df = pd.read_csv(csv_path)
+    df, pool_info = select_training_rows(df, seed=seed, manifest_path=pool_manifest_path)
+    validate_feature_augmentation(df, pool_manifest_path)
     feature_cols = get_feature_columns(df)
 
     if not feature_cols:
@@ -355,7 +370,7 @@ def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42)
         print("[INFO] Existing 'val' rows detected, but they will be ignored.")
         print("[INFO] Validation is now created internally from the TRAIN split only.")
 
-    # Keep a full-train copy for the final refit after model selection.
+    # The final SL refit uses the complete shared balanced development pool.
     X_train_full = X[train_mask]
     y_train_full = y[train_mask]
     X_test = X[test_mask]
@@ -378,10 +393,15 @@ def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42)
     y_train = y_train_full[train_idx]
     X_val = X_train_full[val_idx]
     y_val = y_train_full[val_idx]
-    # Report balanced validation/test metrics so large species classes do not dominate.
-    X_val_balanced, y_val_balanced, val_balanced_support = make_balanced_subset(
-        X_val, y_val, seed=seed
-    )
+    # The shared pool's default validation is balanced already; do not sample it again.
+    if pool_info is not None:
+        X_val_balanced, y_val_balanced = X_val, y_val
+        labels, counts = np.unique(y_val, return_counts=True)
+        val_balanced_support = {str(label): int(count) for label, count in zip(labels, counts)}
+    else:
+        X_val_balanced, y_val_balanced, val_balanced_support = make_balanced_subset(
+            X_val, y_val, seed=seed
+        )
     X_test_balanced, y_test_balanced, test_balanced_support = make_balanced_subset(
         X_test, y_test, seed=seed
     )
@@ -400,7 +420,7 @@ def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42)
     )
 
     metadata_cols_present = [
-        c for c in ["sample_id", "sample_name", "orig_filename", "species", "split"]
+        c for c in ["sample_id", "sample_name", "orig_filename", "species", "split", *AUGMENTATION_METADATA]
         if c in df.columns
     ]
     absolute_train_indices = np.flatnonzero(train_mask)
@@ -432,14 +452,34 @@ def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42)
         "feature_schema": feature_schema,
         "internal_val_fraction": float(val_fraction),
         "n_classes": int(len(class_names)),
+        "training_pool_id": pool_info["training_pool_id"] if pool_info else None,
     }
 
     test_metadata = df.loc[test_mask, metadata_cols_present].reset_index(drop=True)
     filenames = test_metadata.get("orig_filename", pd.Series(absolute_test_indices.astype(str)))
     test_metadata["sample_key"] = test_metadata["species"].astype(str) + "/" + filenames.astype(str)
 
+    # Keep the existing runtime split of originals. Attach only fitting-image views.
+    expanded = expanded_training_indices(df, absolute_internal_train)
+    X_train, y_train = X[expanded], y[expanded]
+    full_mask = df.split.isin(["train", "train_augmented"])
+    X_train_full, y_train_full = X[full_mask], y[full_mask]
+    assert_all_finite("augmented training features", X_train_full)
+    training_cv_frame = df.iloc[expanded].reset_index(drop=True)
+    extra = np.setdiff1d(expanded, absolute_internal_train)
+    if len(extra):
+        added = df.loc[extra, metadata_cols_present].copy().reset_index(names="row_index")
+        added["pipeline_split"] = "train_internal_augmented"
+        split_membership_df = pd.concat([split_membership_df, added], ignore_index=True)
+    split_summary.update(train_internal_samples=len(X_train), train_full_samples=len(X_train_full),
+                         augmented_internal_samples=len(extra),
+                         augmentation_id=(df.loc[df.split.eq("train_augmented"), "augmentation_id"].iloc[0]
+                                          if len(extra) else None))
+
     return {
+        "training_cv_frame": training_cv_frame,
         "test_metadata": test_metadata,
+        "training_pool": pool_info,
         "X_train": X_train,
         "y_train": y_train,
         "X_val": X_val,
@@ -663,21 +703,26 @@ def run_training_pipeline(
     gridsearch_verbose: int = 0,
     tree_model_n_jobs: int = 1,
     xgb_n_jobs: int = 1,
+    pool_manifest_path: str | Path | None = DEFAULT_POOL_MANIFEST,
 ) -> Path:
     """Train, tune, validate, refit, test, and save every enabled model family.
 
-    Model selection uses balanced internal validation. Each chosen configuration
-    is then refitted on all original train rows and evaluated once on test rows.
+    Model selection uses internal validation. Each chosen configuration
+    is then refitted on the shared balanced train pool and evaluated once on test rows.
     The returned run directory contains all artifacts required to inspect it.
     """
     data_csv_path = str(data_csv_path)
+    expected_pool_id = None
+    if pool_manifest_path is not None:
+        _, _, pool = get_training_pool(seed=seed, manifest_path=pool_manifest_path)
+        expected_pool_id = pool["training_pool_id"]
     ready_root = DEFAULT_TRAINING_READY_MANIFEST_PATH.parent.resolve()
     try:
         Path(data_csv_path).resolve().relative_to(ready_root)
     except ValueError:
         pass
     else:
-        manifest = load_training_ready_manifest(DEFAULT_TRAINING_READY_MANIFEST_PATH)
+        manifest = load_training_ready_manifest(DEFAULT_TRAINING_READY_MANIFEST_PATH, expected_pool_id)
         registered = {Path(p).resolve() for p in manifest.csv_path}
         if Path(data_csv_path).resolve() not in registered:
             raise ValueError("This reduced CSV is not registered in the current selection manifest.")
@@ -705,7 +750,9 @@ def run_training_pipeline(
     print(f"[TIME] prepare_run_output_dirs: {format_seconds(stage_elapsed)}")
 
     stage_start = time.perf_counter()
-    data = load_split_dataset(data_csv_path, val_fraction=val_fraction, seed=seed)
+    data = load_split_dataset(data_csv_path, val_fraction=val_fraction, seed=seed,
+                              pool_manifest_path=pool_manifest_path)
+    save_pool_record(data["training_pool"], metadata_dir)
     stage_elapsed = time.perf_counter() - stage_start
     stage_timings.append({"stage": "load_split_dataset", "seconds": stage_elapsed})
     print(f"[TIME] load_split_dataset: {format_seconds(stage_elapsed)}")
@@ -728,7 +775,7 @@ def run_training_pipeline(
 
     print(f"[INFO] Train shape:        {X_train.shape}")
     print(f"[INFO] Internal val shape: {X_val.shape}")
-    print(f"[INFO] Balanced val shape: {X_val_balanced.shape}")
+    print(f"[INFO] Evaluation val shape: {X_val_balanced.shape}")
     print(f"[INFO] Full train shape:   {X_train_full.shape}")
     print(f"[INFO] Test shape:         {X_test.shape}")
     print(f"[INFO] Balanced test shape:{X_test_balanced.shape}")
@@ -780,7 +827,7 @@ def run_training_pipeline(
 
     stage_start = time.perf_counter()
     # Use the same stratified folds for every model to make CV scores comparable.
-    cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=seed)
+    cv = TrainingOnlyAugmentationCV(data["training_cv_frame"], folds=cv_folds, seed=seed)
     spaces = make_model_spaces(
         seed=seed,
         tree_model_n_jobs=tree_model_n_jobs,
@@ -903,7 +950,7 @@ def run_training_pipeline(
             }
         )
 
-    # Refit the selected configuration using all original train rows before one test evaluation.
+    # Refit on the complete shared pool, including the SL internal validation rows.
     for model_name, train_best_model in best_models_train.items():
         model_stage_start = time.perf_counter()
         final_model = clone(train_best_model)
@@ -980,7 +1027,7 @@ def run_training_pipeline(
     plot_model_metrics(val_df, {"val_accuracy": "Accuracy", "val_f1_macro": "Macro-F1",
                                "val_precision_macro": "Macro precision",
                                "val_recall_macro": "Macro recall"},
-                       cm_dir / "internal_validation_metrics.png", "SL internal validation (balanced)")
+                       cm_dir / "internal_validation_metrics.png", "SL internal validation")
     plot_model_metrics(test_df, {"test_accuracy": "Accuracy", "test_f1_macro": "Macro-F1",
                                 "test_precision_macro": "Macro precision",
                                 "test_recall_macro": "Macro recall"},
@@ -988,6 +1035,8 @@ def run_training_pipeline(
     selected_name = str(val_df.iloc[0]["model"])
     save_json(run_dir / "selected_model.json", {
         "family": "SL", "selected_by": "internal_validation_f1_macro",
+        "training_pool_id": expected_pool_id,
+        "augmentation_id": split_summary["augmentation_id"],
         "model": selected_name, "model_path": str(models_dir / f"{selected_name}_final.pkl"),
         "rejection_policy": rejection_policies[selected_name],
         "note": "The threshold was fitted before the final full-train refit; assess coverage drift.",
@@ -1035,6 +1084,7 @@ def run_training_pipeline_batch(
     gridsearch_verbose: int = 0,
     tree_model_n_jobs: int = 1,
     xgb_n_jobs: int = 1,
+    pool_manifest_path: str | Path | None = DEFAULT_POOL_MANIFEST,
 ) -> Path:
     """Run the same training protocol for every feature CSV in an export manifest.
 
@@ -1042,6 +1092,9 @@ def run_training_pipeline_batch(
     feature-selection method and list size can be compared side by side.
     """
     # A batch reuses the same evaluation protocol for every exported feature set.
+    if pool_manifest_path is not None:
+        _, _, pool = get_training_pool(seed=seed, manifest_path=pool_manifest_path)
+        load_training_ready_manifest(manifest_csv_path, pool["training_pool_id"])
     datasets = collect_batch_training_datasets(manifest_csv_path)
 
     batch_root = Path(batch_out_dir)
@@ -1091,6 +1144,7 @@ def run_training_pipeline_batch(
             gridsearch_verbose=gridsearch_verbose,
             tree_model_n_jobs=tree_model_n_jobs,
             xgb_n_jobs=xgb_n_jobs,
+            pool_manifest_path=pool_manifest_path,
         )
         dataset_elapsed = time.perf_counter() - dataset_start
 

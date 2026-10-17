@@ -1,5 +1,15 @@
 # `sl_training_pipeline.py` Guide
 
+Current population: [Shared Training Pool](shared_training_pool.md). Selection,
+tuning and final refitting now use exactly DL's 1,140-image balanced pool, matched
+by image ID and DL order. The default internal split is 912 train / 228 validation;
+validation is not undersampled again. Those counts refer to originals: internal
+fitting now also uses 1,824 shared augmented views, and final refit uses 2,280
+views alongside all originals. CV scores originals only and attaches views within
+each fitting fold, without a preassigned split file. Existing test rows remain
+unchanged. See [Shared Augmentation](shared_augmentation.md); earlier array-size
+examples below describe unaugmented runs.
+
 The current [Thesis Evaluation Protocol](thesis_evaluation_protocol.md) describes rejection, complexity, image audits and statistical evidence. Training defaults to consensus top-50. Regenerate historical feature-selection manifests before batch training.
 
 This guide explains the current behavior of [sl_training_pipeline.py](../sl_training_pipeline.py), including the recent changes:
@@ -8,7 +18,7 @@ This guide explains the current behavior of [sl_training_pipeline.py](../sl_trai
 - it can also read reduced training-ready CSVs exported by `sl_feature_comparison.py`
 - it does not require a pre-made `val` split
 - it creates validation internally from the `train` rows
-- it balances internal validation and test evaluation by downsampling each species to the smallest class support
+- it balances the training pool using the shared DL image list; validation needs no second undersampling, while the existing balanced test table remains
 - it checks for `NaN` / `inf` before training
 - it saves the exact ordered feature-column list used for the models
 - it writes each training run into its own timestamped run folder
@@ -59,7 +69,7 @@ There are now two main ways to use the file:
    - test
 6. Tune models with cross-validation on the internal train subset.
 7. Evaluate the tuned model on the balanced internal validation subset.
-8. Refit the chosen configuration on the full original `train` split.
+8. Refit on the shared balanced pool and views (1,140 originals + 2,280 augmented images).
 9. Evaluate once on the balanced test subset.
 10. Save models, metrics, reports, confusion matrices, feature-column order, and run configuration.
 
@@ -339,7 +349,7 @@ Behavior:
 * `X_train`, `y_train`
 * `X_val`, `y_val`
 
-19. Downsample the internal validation subset using `make_balanced_subset`.
+19. Keep the entire shared-pool internal validation subset; do not undersample it again.
 20. Downsample the test subset using `make_balanced_subset`.
 21. Run finite-value checks on:
 
@@ -381,7 +391,7 @@ Returned data includes:
 
 Important detail:
 
-* `X_train_full` contains all original rows marked as `train`
+* `X_train_full` contains exactly the shared balanced training-pool rows, not all 1,235 original train rows
 * `X_train` is smaller than `X_train_full` because part of the original training data is carved out for internal validation
 * existing `val` rows in the CSV are ignored
 * validation is created only from the original `train` rows
@@ -928,7 +938,7 @@ Execution flow:
    - `*_internal_val_report.txt`
    - `*_internal_val_cm.png`
    - `*_train_only.pkl`
-7. Refit each selected model on the full original `train` split.
+7. Refit each selected model on the entire shared balanced training pool.
 8. Evaluate on `test`.
 9. Save:
    - `*_test_report.txt`
@@ -1085,7 +1095,9 @@ Using a stratified split from the `train` rows is a good default when your datas
 
 It keeps the final test set untouched.
 
-The only added adjustment is that validation and test metrics are now computed on balanced subsets, not on the raw class-count distribution.
+The current shared-pool protocol balances train membership before fitting. Default
+validation is already balanced and is not resampled again; the balanced test
+metric table remains separate from the full-test image-error audit.
 
 ### 2. Finite-value checks are worth keeping
 
@@ -1170,7 +1182,7 @@ The current pipeline is now organized as:
 
 - feature CSV in `dataset_features` or reduced CSV from `sl_results/training_ready_datasets`
 - internal validation created from `train`
-- balanced validation and balanced test evaluation
+- shared-pool validation (no second undersampling) and balanced test-table evaluation
 - final test kept separate
 - strict finite checks before model training
 - per-run output folders under `sl_outputs/runs`

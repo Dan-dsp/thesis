@@ -19,6 +19,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from result_plots import plot_feature_counts, plot_feature_overlap, plot_feature_scores
+from shared_training_pool import DEFAULT_POOL_MANIFEST, SELECTION_PROTOCOL, save_pool_record
 from tqdm import tqdm
 
 from sl_feature_comparison_tools import (
@@ -281,6 +282,7 @@ def export_training_ready_feature_datasets(
     wrapper_results: dict[str, dict[str, Any]],
     embedded_results: dict[str, dict[str, Any]],
     save_dir: str | Path,
+    training_pool_id: str | None = None,
 ) -> pd.DataFrame:
     """Export every requested feature-set variant and return its training manifest.
 
@@ -324,7 +326,8 @@ def export_training_ready_feature_datasets(
             "method_name": method_name,
             "variant": variant,
             "selection_split": SELECTION_SPLIT,
-            "selection_protocol": "train_only_v2_fourier",
+            "selection_protocol": SELECTION_PROTOCOL,
+            "training_pool_id": training_pool_id,
             "n_features": export_info["n_features"],
             "n_rows": export_info["n_rows"],
             "csv_path": export_info["csv_path"],
@@ -386,6 +389,7 @@ def run_feature_comparison_workflow(
     csv_path: str,
     save_dir: str,
     label_col: str = "species",
+    pool_manifest_path: str | Path = DEFAULT_POOL_MANIFEST,
 ) -> None:
     """Run the complete reproducible feature-analysis and selection workflow.
 
@@ -415,7 +419,11 @@ def run_feature_comparison_workflow(
         csv_path,
         label_col=label_col,
         selection_split=SELECTION_SPLIT,
+        pool_manifest_path=pool_manifest_path,
+        seed=SEED,
     )
+    pool_info = df.attrs["training_pool"]
+    save_pool_record(pool_info, save_path)
     selection_df = df.loc[df["split"].eq(SELECTION_SPLIT)].copy()
     y_encoded, _ = encode_labels(y_raw)
     test_rows_excluded = int(df["split"].eq("test").sum())
@@ -475,6 +483,7 @@ def run_feature_comparison_workflow(
         y_raw,
         feature_names,
         save_dir=filter_dirs["mutual_information"],
+        seed=SEED,
     )
     # PCA is used as a ranking lens; it standardizes internally because PCA is
     # scale-sensitive, but it does not transform the model-training CSVs.
@@ -483,6 +492,7 @@ def run_feature_comparison_workflow(
         feature_names,
         n_components=PCA_COMPONENTS,
         save_dir=filter_dirs["pca"],
+        seed=SEED,
     )
     pca_ranked_df = rank_pca_features(
         loadings_df,
@@ -619,6 +629,7 @@ def run_feature_comparison_workflow(
         wrapper_results,
         embedded_results,
         save_dir=output_dirs["training_ready_datasets"],
+        training_pool_id=pool_info["training_pool_id"],
     )
     print(
         "[Training CSVs] Saved "
@@ -634,6 +645,7 @@ def run_feature_comparison_workflow(
         "n_samples_total": int(df.shape[0]),
         "selection_split": SELECTION_SPLIT,
         "n_selection_samples": int(selection_df.shape[0]),
+        "training_pool": pool_info,
         "n_test_samples_excluded_from_selection": test_rows_excluded,
         "n_features": int(len(feature_names)),
         "filter_majority_count": int(filter_comparison["consensus_df"]["majority_vote"].sum()),

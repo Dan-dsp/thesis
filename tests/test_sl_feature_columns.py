@@ -39,7 +39,8 @@ class SLFeatureColumnTests(unittest.TestCase):
         rankings = {"method_top_slices": {"mi": {1: pd.DataFrame(
             {"feature": ["fourier_1"]})}}, "consensus_slices": {}}
         with tempfile.TemporaryDirectory() as tmp:
-            export_training_ready_feature_datasets(df, "species", rankings, {}, {}, tmp)
+            export_training_ready_feature_datasets(df, "species", rankings, {}, {}, tmp,
+                                                    training_pool_id="a" * 64)
             path = Path(tmp) / "training_ready_dataset_manifest.csv"
             manifest = load_training_ready_manifest(path)
             exported = pd.read_csv(manifest.iloc[0].csv_path)

@@ -1,4 +1,4 @@
-"""Run the existing thesis scripts sequentially; default: refresh SL and reuse DL."""
+"""Rebuild shared augmentation, SL/DL training, independent CV, and image reports."""
 
 from __future__ import annotations
 
@@ -28,30 +28,33 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--full", action="store_true",
-                       help="Also extract SL features and retrain both DL configurations.")
+                       help="Explicit alias for the default complete rebuild.")
     modes.add_argument("--reports-only", action="store_true",
                        help="Reuse existing models; run comparison and image-error reporting only.")
-    parser.add_argument("--with-statistics", action="store_true",
-                        help="Also run nested SL CV and within-family SL/DL statistical analysis.")
+    statistics = parser.add_mutually_exclusive_group()
+    statistics.add_argument("--with-statistics", action="store_true",
+                        help="Explicit alias for the default independent CV/statistical analysis.")
+    statistics.add_argument("--skip-statistics", action="store_true",
+                            help="Skip nested SL CV and statistical tests; DL CV still runs.")
     parser.add_argument("--dry-run", action="store_true", help="Show commands without running them.")
     parser.add_argument("--dl-full-model", type=Path,
-                        help="Existing full-DL checkpoint for default/report-only mode.")
+                        help="Existing full-DL checkpoint for reports-only mode.")
     parser.add_argument("--dl-partial-model", type=Path,
-                        help="Existing partial-DL checkpoint for default/report-only mode.")
+                        help="Existing partial-DL checkpoint for reports-only mode.")
     args = parser.parse_args(argv)
     if args.full and (args.dl_full_model or args.dl_partial_model):
         parser.error("--full uses newly trained checkpoints; do not override them with old models.")
     if args.reports_only and args.with_statistics:
         parser.error("Nested CV trains models; omit --reports-only to use --with-statistics.")
+    args.full = not args.reports_only
+    args.with_statistics = not args.reports_only and not args.skip_statistics
+    if args.full and (args.dl_full_model or args.dl_partial_model):
+        parser.error("Checkpoint overrides are only available with --reports-only.")
     return args
 
 
 def checkpoint_paths(args, root=ROOT):
-    if args.full:
-        full = root / "outputs_resnet18_thesis" / "final_train" / CHECKPOINT_NAME
-    else:
-        # Explicitly reuse the historical bbox checkpoint, never the no-bbox experiment.
-        full = args.dl_full_model or root / "outputs_resnet18_thesis_dl_bbox" / "final_train" / CHECKPOINT_NAME
+    full = args.dl_full_model or root / "outputs_resnet18_thesis" / "final_train" / CHECKPOINT_NAME
     partial = (args.dl_partial_model or
                root / "outputs_resnet18_thesis_partial_finetune" / "final_train" / CHECKPOINT_NAME)
     return tuple((root / path).resolve() if not path.is_absolute() else path.resolve()
@@ -61,8 +64,11 @@ def checkpoint_paths(args, root=ROOT):
 def build_stages(args, root=ROOT):
     full, partial = checkpoint_paths(args, root)
     stages = []
+    if not args.reports_only:
+        stages.append(Stage("Shared DL/SL balanced training-image list", ("shared_training_pool.py",)))
     if args.full:
         stages.extend([
+            Stage("Shared fixed training-image augmentation", ("shared_augmentation.py",)),
             Stage("SL feature extraction", ("sl_dataframe_main.py",)),
             Stage("DL full fine-tuning and CV", ("dl_transfer_learning_bird_classifier.py",)),
             Stage("DL partial fine-tuning and CV", ("dl_transfer_learning_bird_classifier_partial_finetune.py",)),

@@ -58,7 +58,9 @@ def main(
         # Import only when needed. This avoids loading a stage and its
         # dependencies when that stage was disabled by the caller.
         from sl_dataframe_main import main as dataframe_main
+        from shared_augmentation import build_augmentation
 
+        stages.append(Stage("Shared Image Augmentation", build_augmentation))
         stages.append(Stage("Feature Extraction", dataframe_main))
 
     if run_feature_analysis:

@@ -1,5 +1,12 @@
 # Shallow Learning Pipeline Overview
 
+Current population: SL selection, training and final refit use exactly the same
+1,140-image balanced development pool as DL, matched by image ID and ordering.
+See [Shared Training Pool](shared_training_pool.md). The rebuilt extracted CSV now
+also includes 2,280 fixed shared augmented views, used only for model fitting.
+Validation/test remain originals. Regenerate extraction, selection and both
+families' models. See [Shared Augmentation](shared_augmentation.md).
+
 Current thesis changes: sl_main trains the selected-feature batch; standalone training defaults to consensus top-50. Read [Thesis Evaluation Protocol](thesis_evaluation_protocol.md) for new per-image errors, rejection, model complexity and statistically independent outer CV. Historical full-feature training examples are superseded by these reduced-feature defaults.
 
 This document describes the full shallow-learning process in your project from image folders to trained models and analysis outputs.
@@ -176,7 +183,7 @@ Guide:
 4. Create an **internal validation split** from the `train` rows.
 5. Tune models with cross-validation on the internal train subset.
 6. Evaluate tuned models on the internal validation subset.
-7. Refit the selected configuration on the full original `train` split.
+7. Refit the selected configuration on the entire shared balanced training pool.
 8. Evaluate once on the untouched `test` split.
 
 ### Models currently supported

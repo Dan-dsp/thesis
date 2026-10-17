@@ -13,6 +13,8 @@ from scipy.stats import t as student_t
 
 from classification_analysis import partition_id, save_json
 from result_plots import plot_matrix, plot_outer_scores
+from shared_training_pool import DEFAULT_POOL_MANIFEST, save_pool_record, select_training_rows
+from shared_augmentation import TrainingOnlyAugmentationCV, validate_feature_augmentation
 
 
 def compare_outer_scores(paths, out_dir):
@@ -29,6 +31,10 @@ def compare_outer_scores(paths, out_dir):
         raise ValueError("Duplicate model/repeat/fold records.")
     if not np.isfinite(scores.score).all() or not scores.score.between(0, 1).all():
         raise ValueError("Expected finite macro-F1 scores in [0, 1].")
+    if "training_pool_id" in scores and scores.training_pool_id.nunique(dropna=False) != 1:
+        raise ValueError("Models must use the same shared training pool.")
+    if "augmentation_id" in scores and scores.augmentation_id.nunique(dropna=False) != 1:
+        raise ValueError("Models must use the same shared augmentation protocol.")
     results = []
     for left, right in combinations(sorted(scores.model.unique()), 2):
         a = scores.loc[scores.model.eq(left)].set_index(["repeat", "fold"]).sort_index()
@@ -83,7 +89,8 @@ def compare_outer_scores(paths, out_dir):
     return result
 
 
-def run_sl_nested_cv(data_csv, out_dir, method="mi", n_features=50, folds=5, seed=42):
+def run_sl_nested_cv(data_csv, out_dir, method="mi", n_features=50, folds=5, seed=42,
+                     pool_manifest_path=DEFAULT_POOL_MANIFEST):
     from sklearn.base import clone
     from sklearn.feature_selection import SelectKBest, f_classif, mutual_info_classif
     from sklearn.metrics import confusion_matrix, f1_score
@@ -95,7 +102,9 @@ def run_sl_nested_cv(data_csv, out_dir, method="mi", n_features=50, folds=5, see
     df = pd.read_csv(data_csv)
     if "split" not in df or "species" not in df:
         raise ValueError("Input must have split and species columns.")
-    df = df.loc[df.split.eq("train")].copy()
+    df = df.loc[df.split.isin(["train", "train_augmented"])].copy()
+    df, pool_info = select_training_rows(df, seed=seed, manifest_path=pool_manifest_path)
+    validate_feature_augmentation(df, pool_manifest_path)
     features = get_feature_columns(df)
     if not 0 < n_features < len(features):
         raise ValueError("Select fewer features than the original feature-vector size.")
@@ -107,10 +116,11 @@ def run_sl_nested_cv(data_csv, out_dir, method="mi", n_features=50, folds=5, see
     y = encoder.transform(df.species)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    save_pool_record(pool_info, out_dir)
     keys = df.species.astype(str) + "/" + df.orig_filename.astype(str)
     if keys.duplicated().any():
         raise ValueError("Each original image must have a unique species/filename key.")
-    outer = StratifiedKFold(folds, shuffle=True, random_state=seed)
+    outer = TrainingOnlyAugmentationCV(df, folds=folds, seed=seed)
     score_func = f_classif if method == "anova" else partial(mutual_info_classif, random_state=seed)
     rows = []
     for fold, (train_idx, val_idx) in enumerate(outer.split(X, y), 1):
@@ -120,7 +130,7 @@ def run_sl_nested_cv(data_csv, out_dir, method="mi", n_features=50, folds=5, see
             # Classification scoring does not require SVM probability calibration.
             if name == "svm_rbf":
                 pipeline.set_params(clf__probability=False)
-            inner = StratifiedKFold(folds, shuffle=True, random_state=seed)
+            inner = TrainingOnlyAugmentationCV(df.iloc[train_idx], folds=folds, seed=seed)
             search = GridSearchCV(pipeline, grid, scoring="f1_macro", cv=inner,
                                   n_jobs=-1, pre_dispatch="n_jobs", error_score="raise")
             with joblib.parallel_backend("threading"):
@@ -134,9 +144,13 @@ def run_sl_nested_cv(data_csv, out_dir, method="mi", n_features=50, folds=5, see
             rows.append({
                 "family": "SL", "model": model_name, "repeat": 0, "fold": fold,
                 "partition_id": partition_id(keys.iloc[val_idx].tolist()),
-                "evaluation_role": "independent_outer", "n_train": len(train_idx),
+                "evaluation_role": "independent_outer",
+                "n_train": int(df.iloc[train_idx].split.eq("train").sum()),
                 "n_validation": len(val_idx),
                 "score": float(f1_score(y[val_idx], pred, average="macro", zero_division=0)),
+                "training_pool_id": pool_info["training_pool_id"] if pool_info else None,
+                "augmentation_id": (str(df.augmentation_id.dropna().iloc[0])
+                                     if "augmentation_id" in df and df.augmentation_id.notna().any() else None),
             })
             pd.DataFrame(rows).to_csv(out_dir / "outer_cv_scores.csv", index=False)
             save_json(out_dir / f"{model_name}_fold_{fold}_params.json", search.best_params_)
@@ -145,6 +159,7 @@ def run_sl_nested_cv(data_csv, out_dir, method="mi", n_features=50, folds=5, see
         "family": "SL", "selection": method, "n_features": n_features,
         "folds": folds, "seed": seed, "selection_and_tuning": "inside_inner_CV",
         "input": str(data_csv), "test_rows_used": False,
+        "training_pool": pool_info,
     })
 
 

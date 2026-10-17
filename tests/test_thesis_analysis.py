@@ -118,11 +118,11 @@ class ThesisAnalysisTests(unittest.TestCase):
                                {"clf__max_depth": [2]})}
             with patch("sl_training_pipeline.make_model_spaces", return_value=spaces):
                 data.to_csv(csv, index=False)
-                run_sl_nested_cv(csv, Path(tmp) / "one", "anova", 2, 3)
+                run_sl_nested_cv(csv, Path(tmp) / "one", "anova", 2, 3, pool_manifest_path=None)
                 data.loc[data.split.eq("test"), ["g1", "g2", "g3"]] = 1e20
                 data.loc[data.split.eq("test"), "species"] = "test_only_label"
                 data.to_csv(csv, index=False)
-                run_sl_nested_cv(csv, Path(tmp) / "two", "anova", 2, 3)
+                run_sl_nested_cv(csv, Path(tmp) / "two", "anova", 2, 3, pool_manifest_path=None)
             pd.testing.assert_frame_equal(
                 pd.read_csv(Path(tmp) / "one" / "outer_cv_scores.csv"),
                 pd.read_csv(Path(tmp) / "two" / "outer_cv_scores.csv"))
@@ -165,7 +165,7 @@ class ThesisAnalysisTests(unittest.TestCase):
             with patch.object(training, "make_model_spaces", return_value=spaces), \
                     patch.object(training, "save_confusion_matrix"), patch.object(training, "tqdm", None):
                 run = training.run_training_pipeline(csv, root / "out", cv_folds=2,
-                                                     gridsearch_n_jobs=1)
+                                                     gridsearch_n_jobs=1, pool_manifest_path=None)
             selected = json.loads((run / "selected_model.json").read_text())
             self.assertEqual(selected["selected_by"], "internal_validation_f1_macro")
             predictions = pd.read_csv(run / "predictions" / "svm_rbf_test_predictions.csv")
@@ -228,12 +228,17 @@ class ThesisAnalysisTests(unittest.TestCase):
                     if "partial" in name:
                         with patch.object(module, "fine_tune_last_internal_layers", return_value=[]):
                             module.run_kfold_on_train("unused", out, k=3, warmup_epochs=1,
-                                                      finetune_epochs=1)
+                                                      finetune_epochs=1, balance_train=True,
+                                                      pool_manifest_path=Path(tmp) / "shared_pool.csv")
                     else:
                         module.run_kfold_on_train("unused", out, k=3, warmup_epochs=1,
-                                                  finetune_epochs=1)
+                                                  finetune_epochs=1, balance_train=True,
+                                                  pool_manifest_path=Path(tmp) / "shared_pool.csv")
                 scores = pd.read_csv(out / "outer_cv_scores.csv")
                 self.assertEqual(len(scores), 3)
+                self.assertTrue(scores.training_pool_id.notna().all())
+                pd.testing.assert_frame_equal(pd.read_csv(out / "training_pool.csv"),
+                                              pd.read_csv(Path(tmp) / "shared_pool.csv"))
                 self.assertTrue((out / "outer_cv_scores.png").exists())
                 for i in range(1, 4):
                     self.assertTrue((out / f"outer_fold_{i}_cm.png").exists())

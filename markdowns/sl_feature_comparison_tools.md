@@ -1,5 +1,14 @@
 # `sl_feature_comparison_tools.py`
 
+PCA now takes `seed=42` and passes it to `PCA(random_state=seed)`; MI also accepts
+the workflow seed. Augmentation identifiers are metadata, never features, and
+are preserved in reduced exports. Rankings/diagnostics still use original train
+rows only. See [Shared Augmentation](shared_augmentation.md).
+
+The project workflow passes a shared image manifest into `load_features_and_labels`.
+Only its selected train rows are used, ordered by DL image IDs rather than CSV order;
+test rows are retained for export. See [Shared Training Pool](shared_training_pool.md).
+
 Selection now also saves RFECV curves with fold variability, wrapper permutation
 importance, embedded importance, grid-search diagnostics, PCA feature ranking
 and a Shapiro p-value histogram. See [Result Plots](result_plots.md).

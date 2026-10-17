@@ -245,6 +245,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from result_plots import plot_matrix, plot_outer_scores
+from shared_augmentation import dl_training_subset
+from shared_training_pool import (
+    DEFAULT_POOL_MANIFEST, balanced_indices, save_dl_split_membership, select_dl_training_pool,
+)
 
 from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
@@ -264,6 +268,8 @@ def set_seed(seed: int = 42) -> None:
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
 
 
 # ----------------------------
@@ -272,14 +278,11 @@ def set_seed(seed: int = 42) -> None:
 def get_transforms() -> Tuple[transforms.Compose, transforms.Compose]:
     """
     Returns:
-    - train_transform: includes random augmentation (used only for training subset)
+    - train_transform: deterministic; fixed shared image views are attached separately
     - eval_transform: deterministic (used for validation and test)
     """
     train_transform = transforms.Compose([
         transforms.Resize((224, 224)),
-        transforms.RandomHorizontalFlip(0.5),
-        transforms.ColorJitter(brightness=0.2, contrast=0.2),
-        transforms.RandomRotation(10),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                              std=[0.229, 0.224, 0.225]),
@@ -531,24 +534,7 @@ def build_balanced_indices(
     - undersample: reduce each class to the minority class size
     - oversample: replicate minority-class samples up to the majority class size
     """
-    rng = np.random.default_rng(seed)
-    classes, counts = np.unique(targets, return_counts=True)
-
-    if mode not in {"undersample", "oversample"}:
-        raise ValueError(f"Unsupported balance mode: {mode}")
-
-    target_count = counts.min() if mode == "undersample" else counts.max()
-    balanced_chunks = []
-
-    for class_id in classes:
-        class_indices = np.where(targets == class_id)[0]
-        replace = mode == "oversample" and len(class_indices) < target_count
-        sampled = rng.choice(class_indices, size=target_count, replace=replace)
-        balanced_chunks.append(sampled)
-
-    balanced_idx = np.concatenate(balanced_chunks)
-    rng.shuffle(balanced_idx)
-    return balanced_idx.astype(int)
+    return balanced_indices(targets, seed, mode)
 
 
 def maybe_balance_dataset(
@@ -595,6 +581,7 @@ def train_final_model_with_internal_val(
     device: str = "cpu",
     balance_train: bool = False,
     balance_mode: str = "undersample",
+    pool_manifest_path: Path = DEFAULT_POOL_MANIFEST,
 ) -> Path:
     """
     Train ONE final model:
@@ -606,6 +593,7 @@ def train_final_model_with_internal_val(
     - path to best final checkpoint
     """
     training_start = time.perf_counter()
+    set_seed(seed)
     train_tf, eval_tf = get_transforms()
 
     # Two views of the same folder:
@@ -616,20 +604,17 @@ def train_final_model_with_internal_val(
     targets = np.array(ds_train_tf.targets)
     num_classes = len(class_names)
 
-    selected_idx, selected_targets = maybe_balance_dataset(
-        targets=targets,
-        class_names=class_names,
-        seed=seed,
-        enable_balance=balance_train,
-        balance_mode=balance_mode,
-        dataset_name="FINAL TRAIN",
+    selected_idx, selected_targets, pool_info = select_dl_training_pool(
+        ds_train_tf, seed=seed, enabled=balance_train, mode=balance_mode,
+        manifest_path=pool_manifest_path, out_dir=out_dir, dataset_root=dataset_dir_train,
     )
 
     train_idx_local, val_idx_local = stratified_train_val_split(selected_targets, val_ratio=val_ratio, seed=seed)
     train_idx = selected_idx[train_idx_local]
     val_idx = selected_idx[val_idx_local]
+    save_dl_split_membership(ds_train_tf, train_idx, val_idx, out_dir / "split_membership.csv")
 
-    train_subset = Subset(ds_train_tf, train_idx.tolist())
+    train_subset = dl_training_subset(ds_train_tf, train_idx, pool_manifest_path, out_dir)
     val_subset   = Subset(ds_eval_tf,  val_idx.tolist())
 
     # Batches definition (last batch can be smaller than batch_size)
@@ -717,6 +702,8 @@ def train_final_model_with_internal_val(
         "finetune_epochs": finetune_epochs, "lr_head": lr_head,
         "lr_finetune": lr_finetune, "internal_val_ratio": val_ratio,
         "device": device, "balance_train": balance_train,
+        "shared_training_pool_id": pool_info["training_pool_id"] if pool_info else None,
+        "augmentation_id": getattr(train_subset, "augmentation_id", None),
         "training_seconds": time.perf_counter() - training_start,
         "train_samples": len(train_loader.dataset), "validation_samples": len(val_loader.dataset),
         "balance_mode": balance_mode,
@@ -742,6 +729,7 @@ def run_kfold_on_train(
     device: str = "cpu",
     balance_train: bool = False,
     balance_mode: str = "undersample",
+    pool_manifest_path: Path = DEFAULT_POOL_MANIFEST,
 ) -> None:
     """
     Runs K-Fold CV ONLY on the TRAIN folder.
@@ -755,13 +743,9 @@ def run_kfold_on_train(
     targets = np.array(ds_train_tf.targets)
     num_classes = len(class_names)
 
-    selected_idx, selected_targets = maybe_balance_dataset(
-        targets=targets,
-        class_names=class_names,
-        seed=seed,
-        enable_balance=balance_train,
-        balance_mode=balance_mode,
-        dataset_name="K-FOLD TRAIN",
+    selected_idx, selected_targets, pool_info = select_dl_training_pool(
+        ds_train_tf, seed=seed, enabled=balance_train, mode=balance_mode,
+        manifest_path=pool_manifest_path, out_dir=out_dir, dataset_root=dataset_dir_train,
     )
 
     skf = StratifiedKFold(n_splits=k, shuffle=True, random_state=seed)
@@ -779,7 +763,7 @@ def run_kfold_on_train(
         # Select epochs/checkpoints on an inner split; reserve the outer fold.
         set_seed(seed + fold_i)
         inner_train, inner_val = stratified_train_val_split(targets[tr_idx], 0.15, seed + fold_i)
-        tr_subset = Subset(ds_train_tf, tr_idx[inner_train].tolist())
+        tr_subset = dl_training_subset(ds_train_tf, tr_idx[inner_train], pool_manifest_path, out_dir)
         va_subset = Subset(ds_eval_tf, tr_idx[inner_val].tolist())
         outer_loader = DataLoader(
             Subset(ds_eval_tf, va_idx.tolist()), batch_size=batch_size, shuffle=False,
@@ -848,6 +832,8 @@ def run_kfold_on_train(
             "n_train": len(tr_idx), "n_validation": len(va_idx),
             "score": float(f1_score(outer_truth, outer_pred, average="macro", zero_division=0)),
             "outer_accuracy": float(accuracy_score(outer_truth, outer_pred)),
+            "training_pool_id": pool_info["training_pool_id"] if pool_info else None,
+            "augmentation_id": getattr(tr_subset, "augmentation_id", None),
         }
         pd.DataFrame([outer_row]).to_csv(out_dir / f"outer_fold_{fold_i}.csv", index=False)
         pd.DataFrame({"sample_key": keys, "true_label": outer_truth,

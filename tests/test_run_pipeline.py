@@ -12,19 +12,22 @@ import run_pipeline as runner
 
 
 class PipelineRunnerTests(unittest.TestCase):
-    def test_default_reuses_dl_and_refreshes_selected_sl_features(self):
+    def test_default_rebuilds_both_families_and_statistics(self):
         args = runner.parse_args([])
         stages = runner.build_stages(args)
-        self.assertEqual([s.arguments[0] for s in stages], ["sl_feature_comparison.py",
-                         "sl_training_pipeline.py", "compare_dl_sl_models.py"])
-        self.assertIn("--run-exported-batch", stages[1].arguments)
-        self.assertIn("outputs_resnet18_thesis_dl_bbox", stages[-1].arguments[2])
+        self.assertEqual(len(stages), 11)
+        self.assertEqual([s.arguments[0] for s in stages[:3]],
+                         ["shared_training_pool.py", "shared_augmentation.py", "sl_dataframe_main.py"])
+        self.assertIn("--run-exported-batch", stages[6].arguments)
+        self.assertIn("outputs_resnet18_thesis", stages[-1].arguments[2])
 
     def test_full_mode_uses_new_dl_outputs(self):
         stages = runner.build_stages(runner.parse_args(["--full"]))
-        self.assertEqual(len(stages), 6)
-        self.assertEqual(stages[0].arguments, ("sl_dataframe_main.py",))
-        self.assertEqual(stages[1].arguments, ("dl_transfer_learning_bird_classifier.py",))
+        self.assertEqual(len(stages), 11)
+        self.assertEqual(stages[0].arguments, ("shared_training_pool.py",))
+        self.assertEqual(stages[1].arguments, ("shared_augmentation.py",))
+        self.assertEqual(stages[2].arguments, ("sl_dataframe_main.py",))
+        self.assertEqual(stages[3].arguments, ("dl_transfer_learning_bird_classifier.py",))
         self.assertIn("outputs_resnet18_thesis", stages[-1].arguments[2])
         self.assertNotIn("outputs_resnet18_thesis_dl_bbox", stages[-1].arguments[2])
 
@@ -37,7 +40,7 @@ class PipelineRunnerTests(unittest.TestCase):
 
     def test_statistics_remain_separate_within_families(self):
         stages = runner.build_stages(runner.parse_args(["--full", "--with-statistics"]))
-        self.assertEqual(len(stages), 9)
+        self.assertEqual(len(stages), 11)
         statistical = [s for s in stages if s.arguments[0] == "thesis_validation.py"]
         self.assertEqual(len(statistical), 3)
         self.assertEqual(statistical[0].arguments[1], "sl-cv")
@@ -61,7 +64,7 @@ class PipelineRunnerTests(unittest.TestCase):
 
     def test_missing_checkpoint_is_detected_before_any_stage(self):
         with tempfile.TemporaryDirectory() as tmp:
-            args = runner.parse_args(["--dl-full-model", str(Path(tmp) / "missing.pth")])
+            args = runner.parse_args(["--reports-only", "--dl-full-model", str(Path(tmp) / "missing.pth")])
             with self.assertRaisesRegex(FileNotFoundError, "Missing saved DL checkpoint"):
                 runner.preflight(args, runner.build_stages(args))
 

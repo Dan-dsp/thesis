@@ -214,6 +214,16 @@ too small for the logos and several pre-existing long URLs exceed the margins.
 These do not prevent a PDF build, but still require formatting review.
 
 FUTURE UPDATES
+30. Reconcile the pre-detector and post-detector image inventory.
+2026-10-16: nuevo_dataset_split contains 1128 training and 137 test images;
+dataset_bbox contains 1235 training and 149 test crop-named files. All output
+names map to source files within the same species/split, but training source
+ocreatus_underwoodii/ML641514587.jpg has no matching processed output.
+Action: Establish why this source has no output without assuming a detection
+failure. Save a source-to-crop manifest and group related crops when creating
+internal validation or cross-validation partitions. The current filename check
+does not establish photographic uniqueness or individual-bird independence.
+
 29. Complete image-condition review before explaining failure causes.
 2026-10-16: image_error_analysis verifies 894 predictions on 149 shared images,
 including five images with errors in both families. All 149 annotation-template

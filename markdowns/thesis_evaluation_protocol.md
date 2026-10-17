@@ -15,7 +15,14 @@ python sl_feature_comparison.py
 python sl_training_pipeline.py --run-exported-batch
 ```
 
-New manifests record selection_split=train and selection_protocol=train_only_v2_fourier.
+New manifests record selection_split=train, selection_protocol=train_only_v4_shared_augmentation
+and training_pool_id. SL selection, tuning, final refit and nested CV all use the
+same DL-ordered balanced development pool (1,140 images, 95/species). The persistent
+list is training_protocol/balanced_training_pool_seed_42.csv with JSON provenance.
+Regenerate older exports and results. The shared augmentation migration also
+requires descriptor extraction and both families' retraining; use run_pipeline.py.
+No validation membership is preassigned. See [Shared Training Pool](shared_training_pool.md)
+and [Shared Augmentation](shared_augmentation.md).
 Legacy names match only f followed by digits, so fourier_1 through fourier_20
 remain descriptive feature candidates. Earlier v1 exports excluded them and are
 refused by batch training. Re-run selection and training, not extraction, when
@@ -61,7 +68,8 @@ python thesis_validation.py compare F:/01_Univalle/01_TG/sl_nested_cv/outer_cv_s
 This optional, expensive procedure uses only original train rows, fits SelectKBest inside
 each inner training fold, tunes each of the four classifiers, and evaluates macro-F1 on
 the outer fold once. It currently supports MI and ANOVA subsets; it does not silently
-claim independent evaluation of all 29 preselected variants.
+claim independent evaluation of all 29 preselected variants. Its development
+population is the shared balanced pool, not all 1,235 original train rows.
 
 Both DL training scripts now split each outer training fold internally for checkpoint/epoch
 selection. The held-out outer fold is evaluated after loading the best inner-validation

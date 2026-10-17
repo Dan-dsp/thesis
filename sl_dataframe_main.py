@@ -1,6 +1,10 @@
 from pathlib import Path
 
 from sl_dataframe_construction import export_feature_dataset_with_structure
+from sl_dataframe_construction import extract_feature_row
+from shared_augmentation import load_augmentation
+import pandas as pd
+from tqdm import tqdm
 
 
 # Source image dataset. The construction function preserves its class/split
@@ -29,6 +33,19 @@ def main() -> None:
         save_manifest=True,
         include_legacy_f_columns=INCLUDE_LEGACY_F_COLUMNS,
     )
+
+    views, _ = load_augmentation()
+    augmented_rows = []
+    for row in tqdm(list(views.itertuples()), desc="Shared augmented descriptors", unit="image"):
+        features = extract_feature_row(row.image_path, "train_augmented", row.species,
+                                       resize_to=(224, 224),
+                                       sample_id=len(manifest_df) + len(augmented_rows),
+                                       include_legacy_f_columns=INCLUDE_LEGACY_F_COLUMNS)
+        features["augmentation_parent"] = row.augmentation_parent
+        features["augmentation_id"] = row.augmentation_id
+        augmented_rows.append(features)
+    manifest_df = pd.concat([manifest_df, pd.DataFrame(augmented_rows)], ignore_index=True)
+    manifest_df.to_csv(FEATURE_DATASET_ROOT / "features_manifest.csv", index=False)
 
     # Ensure the CSV destination exists even if the export function did not
     # need to create it, then save the combined manifest without row indices.

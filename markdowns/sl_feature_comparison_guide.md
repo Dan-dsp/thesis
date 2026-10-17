@@ -168,7 +168,13 @@ This helps you inspect whether final selected features still contain strong redu
 
 ### 7. Training-ready CSV export
 
-The manifest records selection_split=train and selection_protocol=train_only_v2_fourier. Regenerate old exports before the new batch training; this version includes Fourier features among selection candidates. Selection inside outer-CV evaluation is described in [Thesis Evaluation Protocol](thesis_evaluation_protocol.md).
+The manifest records selection_split=train, selection_protocol=train_only_v4_shared_augmentation,
+and training_pool_id. Regenerate old exports: selection now includes Fourier features
+and uses the DL-matched 1,140-image balanced pool. See [Shared Training Pool](shared_training_pool.md).
+Reduced CSVs also retain 2,280 shared augmented descriptor rows for model fitting,
+not for ranking/normality diagnostics. PCA and MI use the explicit workflow seed.
+See [Shared Augmentation](shared_augmentation.md).
+Selection inside outer-CV evaluation is described in [Thesis Evaluation Protocol](thesis_evaluation_protocol.md).
 
 After the rankings and diagnostics are finished, the workflow now exports reduced CSV datasets that can be used directly by [sl_training_pipeline.py](../sl_training_pipeline.py).
 
