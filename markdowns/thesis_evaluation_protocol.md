@@ -15,7 +15,7 @@ python sl_feature_comparison.py
 python sl_training_pipeline.py --run-exported-batch
 ```
 
-New manifests record selection_split=train, selection_protocol=train_only_v4_shared_augmentation
+New manifests record selection_split=train, selection_protocol=train_only_v5_pooled_augmented_validation
 and training_pool_id. SL selection, tuning, final refit and nested CV all use the
 same DL-ordered balanced development pool (1,140 images, 95/species). The persistent
 list is training_protocol/balanced_training_pool_seed_42.csv with JSON provenance.

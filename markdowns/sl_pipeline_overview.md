@@ -3,8 +3,10 @@
 Current population: SL selection, training and final refit use exactly the same
 1,140-image balanced development pool as DL, matched by image ID and ordering.
 See [Shared Training Pool](shared_training_pool.md). The rebuilt extracted CSV now
-also includes 2,280 fixed shared augmented views, used only for model fitting.
-Validation/test remain originals. Regenerate extraction, selection and both
+also includes 2,280 fixed shared augmented views. Ordinary training and validation
+are row-level splits of that whole pool, without parent grouping. Their scores
+can be optimistic. Independent CV safeguards are separate; test stays untouched.
+Regenerate extraction, selection and both
 families' models. See [Shared Augmentation](shared_augmentation.md).
 
 Current thesis changes: sl_main trains the selected-feature batch; standalone training defaults to consensus top-50. Read [Thesis Evaluation Protocol](thesis_evaluation_protocol.md) for new per-image errors, rejection, model complexity and statistically independent outer CV. Historical full-feature training examples are superseded by these reduced-feature defaults.

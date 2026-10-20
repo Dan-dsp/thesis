@@ -245,7 +245,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from result_plots import plot_matrix, plot_outer_scores
-from shared_augmentation import dl_training_subset
+from shared_augmentation import dl_development_pool
 from shared_training_pool import (
     DEFAULT_POOL_MANIFEST, balanced_indices, save_dl_split_membership, select_dl_training_pool,
 )
@@ -609,13 +609,15 @@ def train_final_model_with_internal_val(
         manifest_path=pool_manifest_path, out_dir=out_dir, dataset_root=dataset_dir_train,
     )
 
-    train_idx_local, val_idx_local = stratified_train_val_split(selected_targets, val_ratio=val_ratio, seed=seed)
-    train_idx = selected_idx[train_idx_local]
-    val_idx = selected_idx[val_idx_local]
-    save_dl_split_membership(ds_train_tf, train_idx, val_idx, out_dir / "split_membership.csv")
-
-    train_subset = dl_training_subset(ds_train_tf, train_idx, pool_manifest_path, out_dir)
-    val_subset   = Subset(ds_eval_tf,  val_idx.tolist())
+    development = dl_development_pool(ds_train_tf, selected_idx, pool_manifest_path, out_dir)
+    train_idx, val_idx = stratified_train_val_split(
+        np.asarray(development.targets), val_ratio=val_ratio, seed=seed)
+    save_dl_split_membership(development, train_idx, val_idx, out_dir / "split_membership.csv")
+    train_subset = Subset(development, train_idx.tolist())
+    train_subset.augmentation_id = getattr(development, "augmentation_id", None)
+    val_subset = Subset(development, val_idx.tolist())
+    print("[VALIDATION] Mixed originals/views, row-level split. Related images may cross "
+          "train/validation; these validation scores are not independent source-image evidence.")
 
     # Batches definition (last batch can be smaller than batch_size)
     train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True,
@@ -704,6 +706,7 @@ def train_final_model_with_internal_val(
         "device": device, "balance_train": balance_train,
         "shared_training_pool_id": pool_info["training_pool_id"] if pool_info else None,
         "augmentation_id": getattr(train_subset, "augmentation_id", None),
+        "validation_protocol": "pooled_rows_after_augmentation_v1",
         "training_seconds": time.perf_counter() - training_start,
         "train_samples": len(train_loader.dataset), "validation_samples": len(val_loader.dataset),
         "balance_mode": balance_mode,
@@ -762,9 +765,13 @@ def run_kfold_on_train(
 
         # Select epochs/checkpoints on an inner split; reserve the outer fold.
         set_seed(seed + fold_i)
-        inner_train, inner_val = stratified_train_val_split(targets[tr_idx], 0.15, seed + fold_i)
-        tr_subset = dl_training_subset(ds_train_tf, tr_idx[inner_train], pool_manifest_path, out_dir)
-        va_subset = Subset(ds_eval_tf, tr_idx[inner_val].tolist())
+        # Pool rows for inner checkpoint selection, but keep the outer originals unseen.
+        development = dl_development_pool(ds_train_tf, tr_idx, pool_manifest_path, out_dir)
+        inner_train, inner_val = stratified_train_val_split(
+            np.asarray(development.targets), 0.15, seed + fold_i)
+        tr_subset = Subset(development, inner_train.tolist())
+        tr_subset.augmentation_id = getattr(development, "augmentation_id", None)
+        va_subset = Subset(development, inner_val.tolist())
         outer_loader = DataLoader(
             Subset(ds_eval_tf, va_idx.tolist()), batch_size=batch_size, shuffle=False,
             num_workers=num_workers,
@@ -834,6 +841,7 @@ def run_kfold_on_train(
             "outer_accuracy": float(accuracy_score(outer_truth, outer_pred)),
             "training_pool_id": pool_info["training_pool_id"] if pool_info else None,
             "augmentation_id": getattr(tr_subset, "augmentation_id", None),
+            "inner_validation_protocol": "pooled_rows_after_augmentation_v1",
         }
         pd.DataFrame([outer_row]).to_csv(out_dir / f"outer_fold_{fold_i}.csv", index=False)
         pd.DataFrame({"sample_key": keys, "true_label": outer_truth,

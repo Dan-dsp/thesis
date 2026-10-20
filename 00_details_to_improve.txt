@@ -30,13 +30,12 @@ features and a completed replacement batch. Those active-pipeline tasks are
 resolved. Action: Update or retire the legacy evaluator and share the schema
 rule so the naming error cannot reappear through that separate entrypoint.
 
-02. HIGH: Feature selection precedes internal validation splitting.
-Files: sl_feature_comparison.py, sl_training_pipeline.py.
-All original train rows influence selection before internal validation is
-created. Final test rows are excluded, but internal validation/CV is not
-independent of supervised feature selection.
-Action: Select within development-training data or within CV folds. Consider
-nested CV to evaluate the entire tuned procedure; retain untouched final tests.
+02. HIGH: Independently assess ordinary batch feature selection.
+2026-10-20: independent nested SL CV for MI top-50 and within-family statistics
+are complete. This does not independently evaluate all 29 variants or the
+selected SVM-wrapper top-50 Random Forest. Batch selection still precedes the
+internal mixed-row validation split.
+Action: Evaluate the full chosen procedure with feature selection inside folds.
 
 03. HIGH: Persist shared source/crop evaluation provenance.
 2026-10-10 verification: the new DL audits and selected MI top-100 SL audit
@@ -45,13 +44,12 @@ correspondence question for these specific outputs, not original-photo identity.
 Action: Save a shared evaluation manifest and original-to-crop mapping; attach
 model/dataset hashes and distinguish related crops from independent photographs.
 
-04. HIGH: Separate balanced and unbalanced result protocols.
-DL main configurations undersample training/testing. SL keeps natural training
-counts and balances validation/testing. Standalone comparison defaults to
-unbalanced testing unless --balance-test is used. Saved bbox DL reports use 132
-samples; comparison_results uses 149; no-bbox DL uses 137.
-Action: Record exact IDs, class supports, balancing settings, dataset version and
-run configuration. Do not interchange scores from different evaluation subsets.
+04. Preserve exact balanced test membership and distinguish test populations.
+The October 17-18 run uses the same balanced 1140-original pool plus 2280 fixed
+views for SL and DL. The unequal starting-pool issue is resolved.
+Balanced testing uses 132 crops; full prediction reports use 149.
+Action: Save exact balanced test IDs, not only supports, and keep the two
+evaluation populations distinct.
 
 05. HIGH: Dataset splitting cannot run directly as configured.
 File: split_dataset.py. __main__ uses source_root/dest_root, but their assignments
@@ -76,11 +74,6 @@ DL training resizes directly to 224x224; utils_bounding_boxes_separation.py expa
 boxes by 10%, preserves aspect ratio and uses black letterbox padding.
 Action: Share transforms or measure/document the difference.
 
-09. Preserve fitting membership, not only verified counts.
-2026-10-10 artifacts establish 969 fitting/171 validation images for both new DL
-runs and 988/247 internally for SL, with SL final refitting on 1235 images.
-Action: Persist exact DL balancing/fitting IDs and reconcile original-to-crop
-membership. Counts alone do not establish equally trained or independent samples.
 
 10. Freezing parameters does not freeze BatchNorm state.
 Both DL scripts call model.train(), allowing running-statistic updates in frozen
@@ -88,11 +81,11 @@ BatchNorm modules despite requires_grad=False.
 Action: Decide whether this adaptation is intended; otherwise keep frozen
 BatchNorm modules in evaluation mode. Distinguish parameters from buffers.
 
-11. Define partial fine-tuning precisely.
-dl_transfer_learning_bird_classifier_partial_finetune.py selects the last four
-parameter-owning modules, such as convolution/BatchNorm, not four residual blocks.
-Action: Save exact module names and trainable count; clarify metadata when the
-best checkpoint comes from warmup rather than partial fine-tuning.
+11. Distinguish final-stage trainability from checkpoint-stage trainability.
+Exact partial fine-tuning module names and parameter counts are now saved.
+That documentation requirement is resolved.
+Action: Ensure future metadata distinguishes the winning checkpoint stage from
+final-stage trainability when a warmup checkpoint wins.
 
 12. Preserve complete DL run provenance.
 Seeds provide best-effort reproducibility, not guaranteed GPU determinism.
@@ -160,15 +153,11 @@ not restore current label-encoder metadata.
 Action: Restore/configure intended tools or mark inactive; reuse current loaders.
 
 23. Preserve model-file identity alongside prediction exports.
-The October 16 runner records explicit --dl-full-model and --dl-partial-model
-arguments in pipeline_runs/run_20261016_022009_994895/status.json and completed
-the family reports. It intentionally reused the historical DL checkpoints;
-the reports must remain distinct from the October 9 project-root DL training.
-Configurable paths and recorded commands are resolved. Remaining action:
-record checkpoint/model hashes, dataset version and the SL run path directly
-with each prediction export. evaluator_sources.csv identifies source CSV paths;
-the short evaluator suffix hashes that path string, not the model contents.
-Preserve the runner status file with the report to retain its current provenance.
+The completed run_20261017_144956_321232 records the new DL checkpoint paths
+and replacement SL batch. All four SL family prediction files match that run.
+Action: Attach final model-file hashes, dataset/report versions, and the SL run
+path to prediction exports. Path-derived evaluator suffixes are not model
+content hashes. Archive fixed DL and report directories per experiment.
 
 24. Integrate segmentation experiments deliberately.
 feature_extraction_analysis.ipynb explores Otsu, GrabCut, HSV and saliency-assisted
@@ -214,6 +203,15 @@ too small for the logos and several pre-existing long URLs exceed the margins.
 These do not prevent a PDF build, but still require formatting review.
 
 FUTURE UPDATES
+31. HIGH: Ordinary augmented-row validation shares parents with fitting.
+2026-10-20: saved manifests show 535 crop parents on both sides of the selected
+SL split and 439 on both sides of the DL split. This is the recorded pooled-row
+policy, not a failed run. Outer CV excludes held-out crop parents' views.
+Action: For independent ordinary validation, group source photographs before
+augmentation, keep related crops/views together, and select features only within
+permitted training data. Use an independent grouped calibration collection for
+rejection and rerun the experiments after changing this protocol.
+
 30. Reconcile the pre-detector and post-detector image inventory.
 2026-10-16: nuevo_dataset_split contains 1128 training and 137 test images;
 dataset_bbox contains 1235 training and 149 test crop-named files. All output
@@ -225,13 +223,11 @@ internal validation or cross-validation partitions. The current filename check
 does not establish photographic uniqueness or individual-bird independence.
 
 29. Complete image-condition review before explaining failure causes.
-2026-10-16: image_error_analysis verifies 894 predictions on 149 shared images,
-including five images with errors in both families. All 149 annotation-template
-condition/note fields are empty; condition_summary.csv has only its header.
-Action: Annotate both correct and incorrect images with observed conditions,
-regenerate condition summaries, and retain denominators. Inspect source photos
-as well as crops before attributing failures to detection or cropping. Save
-photographer/source credits for any example crops reproduced in the thesis.
+2026-10-20: 894 unique predictions cover 149 shared crops; six have errors in
+both families and one is missed by all six models. All condition/notes entries
+remain blank.
+Action: Annotate correct and incorrect images, retain denominators, inspect
+source photographs as well as crops, and complete photographer/source credits.
 
 Append dated findings, sources, implications and recommended actions. Remove
 resolved entries after verification; retain requirements that remain pending in

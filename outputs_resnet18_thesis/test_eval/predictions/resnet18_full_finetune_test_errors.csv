@@ -1,0 +1,4 @@
+sample_key,image_path,family,model,true_label,predicted_label,confidence,correct,rejected,decision
+colibri_delphinae/ML641964967_b0.jpg,F:/01_Univalle/01_TG/dataset_bbox/test\colibri_delphinae\ML641964967_b0.jpg,DL,resnet18_full_finetune,colibri_delphinae,turdus_ignobilis,0.9552448987960815,False,False,turdus_ignobilis
+florisuga_mellivora/ML641247047_b0.jpg,F:/01_Univalle/01_TG/dataset_bbox/test\florisuga_mellivora\ML641247047_b0.jpg,DL,resnet18_full_finetune,florisuga_mellivora,ocreatus_underwoodii,0.9543316960334778,False,False,ocreatus_underwoodii
+florisuga_mellivora/ML642129628_b0.jpg,F:/01_Univalle/01_TG/dataset_bbox/test\florisuga_mellivora\ML642129628_b0.jpg,DL,resnet18_full_finetune,florisuga_mellivora,ocreatus_underwoodii,0.7999020218849182,False,False,ocreatus_underwoodii

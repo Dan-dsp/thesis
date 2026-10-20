@@ -1,0 +1,14 @@
+{
+  "protocol": "shared_fixed_flip_rotation_v1",
+  "seed": 42,
+  "training_pool_id": "8a7694b245c37ad790260ffb1f08ab0d66fdc566249a4bb3d5c48984b9e30ccb",
+  "dataset_root": "F:\\01_Univalle\\01_TG\\dataset_bbox\\train",
+  "augmentation_id": "8e5d7d06c750565b298a690f340cdb86cf379f454db1e41fdbeca458ab032b4c",
+  "views_per_original": 2,
+  "manifest_sha256": "97de49049f3c5765614ad0ac9fd964190d1b7b66a0020f68b060ee39904ee61a",
+  "split_assignment": "none; pooled originals and views split at runtime",
+  "validation_protocol": "pooled_rows_after_augmentation_v1",
+  "transforms": "view 1: horizontal flip + rotation; view 2: rotation; angles [-10,10]",
+  "source_images": 1140,
+  "augmented_images": 2280
+}

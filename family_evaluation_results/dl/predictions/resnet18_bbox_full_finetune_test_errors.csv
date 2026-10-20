@@ -1,3 +1,4 @@
 sample_key,image_path,family,model,true_label,predicted_label,correct
-ocreatus_underwoodii/ML638747115_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\ocreatus_underwoodii\ML638747115_b0.jpg,DL,resnet18_bbox_full_finetune,ocreatus_underwoodii,florisuga_mellivora,False
-ocreatus_underwoodii/ML641755386_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\ocreatus_underwoodii\ML641755386_b0.jpg,DL,resnet18_bbox_full_finetune,ocreatus_underwoodii,setophaga_fusca,False
+colibri_delphinae/ML641964967_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\colibri_delphinae\ML641964967_b0.jpg,DL,resnet18_bbox_full_finetune,colibri_delphinae,turdus_ignobilis,False
+florisuga_mellivora/ML641247047_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\florisuga_mellivora\ML641247047_b0.jpg,DL,resnet18_bbox_full_finetune,florisuga_mellivora,ocreatus_underwoodii,False
+florisuga_mellivora/ML642129628_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\florisuga_mellivora\ML642129628_b0.jpg,DL,resnet18_bbox_full_finetune,florisuga_mellivora,ocreatus_underwoodii,False

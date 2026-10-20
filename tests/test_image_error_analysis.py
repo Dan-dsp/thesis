@@ -27,6 +27,8 @@ class ImageErrorAnalysisTests(unittest.TestCase):
                 Image.new("RGB", (10, 10), color="green").save(image_dir / f"image{i}.jpg")
             sl = self.predictions(root, "SL", "knn", ["b", "b", "a", "a"])
             dl = self.predictions(root, "DL", "resnet", ["b", "a", "b", "a"])
+            # Cross-family matching must use image identity, not prediction row position.
+            pd.read_csv(dl).iloc[::-1].to_csv(dl, index=False)
             # Rejection flags and decisions must not change raw-error analysis.
             table = pd.read_csv(sl).assign(rejected=True, decision="REJECT")
             table.to_csv(sl, index=False)

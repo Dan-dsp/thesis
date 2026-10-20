@@ -8,16 +8,16 @@ Training now defaults to the reduced consensus top-50 CSV; batch mode requires a
 
 Legacy column names are only `f` followed by digits (for example, `f0`).
 Descriptive `fourier_1` through `fourier_20` are eligible predictors, not legacy
-columns. Batch training requires `train_only_v4_shared_augmentation` exports with a matching
+columns. Batch training requires `train_only_v5_pooled_augmented_validation` exports with a matching
 training_pool_id; regenerate selection with `python sl_feature_comparison.py` first.
 
 All training inputs are matched to DL's shared balanced image list (1,140 images,
-95/species), including final refitting. The default 20% validation has 228 images,
-19/species; no second validation undersampling is applied. The final SL refit uses
-all 1,140 originals plus 2,280 fixed augmented views. Internal fitting uses
-912 originals and their 1,824 views; validation/test contain originals only.
-CV attaches views only to fitting originals, without preassigned memberships.
-Test rows remain unchanged. See [Shared Augmentation](shared_augmentation.md).
+95/species), plus 2,280 fixed views. All 3,420 rows enter the ordinary runtime
+split: 2,736 fitting rows and 684 validation rows. Versions are not grouped;
+related source images can cross those subsets and inflate validation scores.
+Ordinary tuning CV also splits mixed rows. Separate nested independent CV retains
+source isolation. The final SL refit uses all 3,420 rows. Test stays unaugmented.
+See [Shared Augmentation](shared_augmentation.md).
 See [Shared Training Pool](shared_training_pool.md).
 
 Main SL model-training pipeline. It loads the handcrafted feature CSV or reduced feature-set CSVs, uses only the declared training rows to build an internal validation split, tunes classical models, and evaluates the selected models on the held-out test rows.

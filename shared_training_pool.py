@@ -15,7 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TRAIN_ROOT = PROJECT_ROOT / "dataset_bbox" / "train"
 DEFAULT_POOL_MANIFEST = PROJECT_ROOT / "training_protocol" / "balanced_training_pool_seed_42.csv"
 POOL_PROTOCOL = "dl_ordered_undersample_v1"
-SELECTION_PROTOCOL = "train_only_v4_shared_augmentation"
+SELECTION_PROTOCOL = "train_only_v5_pooled_augmented_validation"
 
 
 def balanced_indices(targets, seed, mode="undersample"):

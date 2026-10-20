@@ -1,9 +1,11 @@
 # `dl_transfer_learning_bird_classifier.py`
 
 Training now uses originals plus the exact saved image views also used by SL.
-Extra online random flips/rotations/color jitter are disabled. Runtime fitting
-subsets get their originals' views; validation, outer folds and test use only
-originals. No validation assignment is precreated. Final training resets its
+Extra online random flips/rotations/color jitter are disabled. The whole mixed
+pool is split at row level for ordinary fitting/validation: 2,907 / 513 rows.
+Related versions may cross these sides, so validation can be optimistic. Separate
+outer CV still reserves originals and excludes their views from development.
+No validation assignment is precreated. Final training resets its
 seed independently of CV; cuDNN deterministic mode is enabled. Old checkpoints
 must be retrained for this augmentation protocol.
 See [Shared Augmentation](shared_augmentation.md).

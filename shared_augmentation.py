@@ -20,6 +20,7 @@ ROOT = PROJECT_ROOT / "training_protocol" / "augmentation_seed_42"
 MANIFEST = ROOT / "augmentation_manifest.csv"
 PROTOCOL = "shared_fixed_flip_rotation_v1"
 METADATA = ("augmentation_parent", "augmentation_id")
+VALIDATION_PROTOCOL = "pooled_rows_after_augmentation_v1"
 _VERIFIED_ASSETS = set()
 
 
@@ -66,7 +67,8 @@ def build_augmentation(*, seed=42, pool_manifest=DEFAULT_POOL_MANIFEST, out_dir=
         "dataset_root": str(source_root.resolve()),
         "augmentation_id": augmentation_id, "views_per_original": 2,
         "manifest_sha256": file_hash(out / MANIFEST.name),
-        "split_assignment": "none; existing splitters assign originals at runtime",
+        "split_assignment": "none; pooled originals and views split at runtime",
+        "validation_protocol": VALIDATION_PROTOCOL,
         "transforms": "view 1: horizontal flip + rotation; view 2: rotation; angles [-10,10]",
         "source_images": len(pool), "augmented_images": len(table),
     }, indent=2), encoding="utf-8")
@@ -151,6 +153,10 @@ class SharedAugmentedDataset(Dataset):
         self.views = [(row.image_path, dataset.class_to_idx[row.species])
                       for row in selected.itertuples()]
         self.transform = dataset.transform
+        self.classes = list(dataset.classes)
+        self.class_to_idx = dict(dataset.class_to_idx)
+        self.samples = [dataset.samples[int(i)] for i in indices] + self.views
+        self.targets = [int(target) for _, target in self.samples]
 
     def __len__(self):
         return len(self.originals) + len(self.views)
@@ -177,6 +183,18 @@ def dl_training_subset(dataset, indices, pool_manifest, out_dir):
     out.mkdir(parents=True, exist_ok=True)
     (out / "augmentation_protocol.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
     return SharedAugmentedDataset(dataset, indices, table)
+
+
+def dl_development_pool(dataset, indices, pool_manifest, out_dir):
+    """Build the full mixed pool before the caller performs its ordinary split."""
+    result = dl_training_subset(dataset, indices, pool_manifest, out_dir)
+    if isinstance(result, Subset):
+        # Preserve metadata for synthetic/external datasets without shared views.
+        result.classes = list(dataset.classes)
+        result.samples = [dataset.samples[int(i)] for i in indices]
+        result.targets = [int(target) for _, target in result.samples]
+    result.validation_protocol = VALIDATION_PROTOCOL
+    return result
 
 
 if __name__ == "__main__":

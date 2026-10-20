@@ -92,15 +92,59 @@ class SharedAugmentationTests(unittest.TestCase):
             exported.to_csv(path, index=False)
             data = load_split_dataset(path, pool_manifest_path=None, val_fraction=0.2)
             self.assertEqual(len(data["X_train"]), 48)
-            self.assertEqual(len(data["X_val"]), 4)
+            self.assertEqual(len(data["X_val"]), 12)
             self.assertEqual(len(data["X_train_full"]), 60)
             self.assertEqual(len(data["X_test"]), 2)
-            self.assertTrue((data["X_val"][:, 0] < 100).all())
+            self.assertTrue((data["X_val"][:, 0] >= 100).any())
+            self.assertTrue((data["X_val"][:, 0] < 100).any())
             self.assertTrue((data["X_test"][:, 0] == 9999).all())
             self.assertEqual(data["n_features"], 2)
-            cv = TrainingOnlyAugmentationCV(data["training_cv_frame"], folds=2)
+            from sklearn.model_selection import StratifiedKFold
+            cv = StratifiedKFold(2, shuffle=True, random_state=42)
             for train, val in cv.split(data["X_train"], data["y_train"]):
-                self.assertTrue((data["X_train"][val, 0] < 100).all())
+                self.assertTrue((data["X_train"][val, 0] >= 100).any())
+            membership = data["split_membership_df"]
+            fitting = membership.loc[membership.pipeline_split.eq("train_internal")]
+            validation = membership.loc[membership.pipeline_split.eq("val_internal")]
+            def parents(part):
+                return set(part.augmentation_parent.fillna(part.species + "/" + part.orig_filename))
+            self.assertTrue(parents(fitting) & parents(validation))
+            self.assertEqual(data["split_summary"]["validation_protocol"],
+                             "pooled_rows_after_augmentation_v1")
+
+    def test_dl_pooled_rows_include_views_in_both_runtime_partitions(self):
+        from sklearn.model_selection import StratifiedShuffleSplit
+        from shared_augmentation import dl_development_pool
+        from shared_training_pool import get_training_pool, DEFAULT_POOL_MANIFEST
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for species in ("a", "b"):
+                folder = root / "train" / species
+                folder.mkdir(parents=True)
+                for i in range(4):
+                    Image.new("RGB", (16, 16), color=(i * 40, 50, 80)).save(folder / f"{i}.png")
+            kwargs = dict(dataset_root=root / "train", pool_manifest=root / "pool.csv",
+                          out_dir=root / "views")
+            build_augmentation(**kwargs)
+            table, info = load_augmentation(root / "views" / "augmentation_manifest.csv")
+            dataset = ImageFolder(str(root / "train"), transform=ToTensor())
+            pool = get_training_pool(dataset, manifest_path=root / "pool.csv", dataset_root=root / "train")
+            with patch("shared_augmentation.load_augmentation", return_value=(table, info)), \
+                    patch("shared_augmentation.get_training_pool", return_value=pool):
+                mixed = dl_development_pool(dataset, pool[0], DEFAULT_POOL_MANIFEST, root / "outputs")
+            self.assertEqual(len(mixed), 24)
+            train, val = next(StratifiedShuffleSplit(1, test_size=0.25, random_state=42).split(
+                np.zeros(len(mixed)), mixed.targets))
+            self.assertTrue(any(i >= 8 for i in train))
+            self.assertTrue(any(i >= 8 for i in val))
+            self.assertEqual(set(train) | set(val), set(range(24)))
+            self.assertFalse(set(train) & set(val))
+            for i in val:
+                image, target = mixed[int(i)]
+                self.assertEqual(target, mixed.targets[int(i)])
+                self.assertEqual(tuple(image.shape), (3, 16, 16))
 
     def test_seeded_pca_is_independent_of_global_numpy_rng(self):
         from sl_feature_comparison_tools import run_pca_analysis

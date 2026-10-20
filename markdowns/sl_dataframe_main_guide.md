@@ -3,7 +3,8 @@
 Current augmentation update: shared_augmentation.py must run first. The entrypoint
 extracts descriptors from its fixed PNG views as well as the original image
 folders. These rows are marked train_augmented and carry parent/protocol IDs;
-they are used only for fitting, not held-out scoring or feature rankings.
+they are pooled with originals for ordinary fitting/validation, but not feature
+rankings. Independent CV protects held-out sources separately; test stays untouched.
 See [Shared Augmentation](shared_augmentation.md) for the current rebuild order.
 
 This file is the entrypoint for building the shallow-learning feature dataset.

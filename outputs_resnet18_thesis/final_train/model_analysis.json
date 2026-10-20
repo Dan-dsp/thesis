@@ -1,0 +1,27 @@
+{
+  "family": "DL",
+  "architecture": "ResNet18",
+  "total_parameters": 11182668,
+  "trainable_parameters_final_stage": 11182668,
+  "training_algorithm": "Adam, cross-entropy, head warmup then fine-tuning",
+  "hyperparameters": {
+    "seed": 42,
+    "batch_size": 32,
+    "warmup_epochs": 3,
+    "finetune_epochs": 5,
+    "lr_head": 0.001,
+    "lr_finetune": 0.0001,
+    "internal_val_ratio": 0.15,
+    "device": "cpu",
+    "balance_train": true,
+    "shared_training_pool_id": "8a7694b245c37ad790260ffb1f08ab0d66fdc566249a4bb3d5c48984b9e30ccb",
+    "augmentation_id": "8e5d7d06c750565b298a690f340cdb86cf379f454db1e41fdbeca458ab032b4c",
+    "validation_protocol": "pooled_rows_after_augmentation_v1",
+    "training_seconds": 2075.1557418000884,
+    "train_samples": 2907,
+    "validation_samples": 513,
+    "balance_mode": "undersample",
+    "fine_tuned_internal_layers": "all"
+  },
+  "checkpoint_file_bytes": 44813643
+}

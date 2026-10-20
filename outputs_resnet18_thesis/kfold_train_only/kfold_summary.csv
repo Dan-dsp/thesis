@@ -1,0 +1,6 @@
+fold,best_val_acc,best_model_path
+1,1.0,F:\01_Univalle\01_TG\01_Python\outputs_resnet18_thesis\kfold_train_only\kfold_best_fold_1.pth
+2,1.0,F:\01_Univalle\01_TG\01_Python\outputs_resnet18_thesis\kfold_train_only\kfold_best_fold_2.pth
+3,1.0,F:\01_Univalle\01_TG\01_Python\outputs_resnet18_thesis\kfold_train_only\kfold_best_fold_3.pth
+4,1.0,F:\01_Univalle\01_TG\01_Python\outputs_resnet18_thesis\kfold_train_only\kfold_best_fold_4.pth
+5,1.0,F:\01_Univalle\01_TG\01_Python\outputs_resnet18_thesis\kfold_train_only\kfold_best_fold_5.pth

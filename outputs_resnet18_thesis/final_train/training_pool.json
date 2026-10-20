@@ -1,0 +1,24 @@
+{
+  "protocol": "dl_ordered_undersample_v1",
+  "seed": 42,
+  "dataset_root": "F:\\01_Univalle\\01_TG\\dataset_bbox\\train",
+  "source_order_id": "4c548045a957623c1349a154df8938e95694f4b0d2ea94ac48c7b175bf186185",
+  "source_images": 1235,
+  "selected_images": 1140,
+  "class_counts": {
+    "anisognathus_somptuosus": 95,
+    "chlorophanes_spiza": 95,
+    "colibri_delphinae": 95,
+    "florisuga_mellivora": 95,
+    "myioborus_miniatus": 95,
+    "ocreatus_underwoodii": 95,
+    "ramphocelus_flamigerus": 95,
+    "setophaga_fusca": 95,
+    "stilpnia_vitriolina": 95,
+    "tangara_arthus": 95,
+    "turdus_ignobilis": 95,
+    "zonotrichia_capensis": 95
+  },
+  "training_pool_id": "8a7694b245c37ad790260ffb1f08ab0d66fdc566249a4bb3d5c48984b9e30ccb",
+  "manifest_path": "F:\\01_Univalle\\01_TG\\training_protocol\\balanced_training_pool_seed_42.csv"
+}

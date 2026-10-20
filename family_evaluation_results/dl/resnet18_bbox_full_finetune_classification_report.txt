@@ -2,17 +2,17 @@
 
 anisognathus_somptuosus     1.0000    1.0000    1.0000        12
      chlorophanes_spiza     1.0000    1.0000    1.0000        12
-      colibri_delphinae     1.0000    1.0000    1.0000        12
-    florisuga_mellivora     0.9333    1.0000    0.9655        14
+      colibri_delphinae     1.0000    0.9167    0.9565        12
+    florisuga_mellivora     1.0000    0.8571    0.9231        14
      myioborus_miniatus     1.0000    1.0000    1.0000        11
-   ocreatus_underwoodii     1.0000    0.8462    0.9167        13
+   ocreatus_underwoodii     0.8667    1.0000    0.9286        13
  ramphocelus_flamigerus     1.0000    1.0000    1.0000        14
-        setophaga_fusca     0.9286    1.0000    0.9630        13
+        setophaga_fusca     1.0000    1.0000    1.0000        13
     stilpnia_vitriolina     1.0000    1.0000    1.0000        12
          tangara_arthus     1.0000    1.0000    1.0000        13
-       turdus_ignobilis     1.0000    1.0000    1.0000        11
+       turdus_ignobilis     0.9167    1.0000    0.9565        11
    zonotrichia_capensis     1.0000    1.0000    1.0000        12
 
-               accuracy                         0.9866       149
-              macro avg     0.9885    0.9872    0.9871       149
-           weighted avg     0.9875    0.9866    0.9863       149
+               accuracy                         0.9799       149
+              macro avg     0.9819    0.9812    0.9804       149
+           weighted avg     0.9822    0.9799    0.9798       149

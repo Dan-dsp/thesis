@@ -168,7 +168,7 @@ This helps you inspect whether final selected features still contain strong redu
 
 ### 7. Training-ready CSV export
 
-The manifest records selection_split=train, selection_protocol=train_only_v4_shared_augmentation,
+The manifest records selection_split=train, selection_protocol=train_only_v5_pooled_augmented_validation,
 and training_pool_id. Regenerate old exports: selection now includes Fourier features
 and uses the DL-matched 1,140-image balanced pool. See [Shared Training Pool](shared_training_pool.md).
 Reduced CSVs also retain 2,280 shared augmented descriptor rows for model fitting,

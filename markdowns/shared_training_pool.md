@@ -43,7 +43,7 @@ or edited manifests fail clearly instead of silently choosing another cohort.
 - SL tuning, internal validation and final refit: always the same pool.
 - SL nested CV: same ordered development population, with selection inside folds.
 
-The selection manifest now uses `train_only_v4_shared_augmentation` and records
+The selection manifest now uses `train_only_v5_pooled_augmented_validation` and records
 `training_pool_id`. Earlier unbalanced exports, including v2 Fourier-aware
 exports, must be regenerated. Batch training checks the recorded ID against the
 current pool before starting. The augmentation migration requires re-extracting
@@ -62,12 +62,13 @@ These procedures intentionally remain unchanged:
 
 | Procedure | Internal fitting | Internal validation | Final model |
 | --- | --- | --- | --- |
-| SL, 20% validation | 912 originals + 1,824 views | 228 originals | Refit on 1,140 originals + 2,280 views |
-| DL, 15% validation | 969 originals + 1,938 views | 171 originals | Best internal-validation checkpoint; no full-pool refit |
+| SL, 20% validation | 2,736 mixed rows | 684 mixed rows | Refit on 1,140 originals + 2,280 views |
+| DL, 15% validation | 2,907 mixed rows | 513 mixed rows | Best internal-validation checkpoint; no full-pool refit |
 
 SL no longer performs a second validation-balancing operation when the shared
 pool is enabled. At the default 20% fraction its validation is already exactly
-balanced. A different fraction can require integer rounding; the entire
+balanced by species after the row-level mixed-pool split. Related source images
+may cross training/validation. A different fraction can require rounding; the entire
 stratified validation subset is retained rather than undersampled again.
 Existing balanced test-metric tables and full-test image-error audits are unchanged.
 

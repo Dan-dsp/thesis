@@ -3,7 +3,7 @@
 Filter consensus votes, filter overlap, stage overlap and stage subset sizes are
 also saved as PNGs beside their CSVs. See [Result Plots](result_plots.md).
 
-The export manifest records selection_split=train, selection_protocol=train_only_v4_shared_augmentation,
+The export manifest records selection_split=train, selection_protocol=train_only_v5_pooled_augmented_validation,
 and training_pool_id. All selection methods now see the same 1,140-image balanced pool
 as DL (95 per species), in the same order. Existing test rows are preserved in exports.
 Augmented descriptors are retained in reduced CSVs for fitting, but excluded from

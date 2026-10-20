@@ -2,7 +2,8 @@
 
 Run shared_augmentation.py first (the full runner and sl_main do this). Extraction
 now also reads the saved augmented PNGs and appends their descriptors as
-train_augmented rows with parent IDs and augmentation provenance. Originals and
+train_augmented rows with parent IDs and augmentation provenance. Those rows
+are pooled with originals before ordinary training/validation splitting. Originals and
 test descriptors are still extracted from dataset_bbox. The combined feature
 manifest and global CSV both include these rows.
 See [Shared Augmentation](shared_augmentation.md).

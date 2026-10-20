@@ -2,13 +2,14 @@
 
 Current population: [Shared Training Pool](shared_training_pool.md). Selection,
 tuning and final refitting now use exactly DL's 1,140-image balanced pool, matched
-by image ID and DL order. The default internal split is 912 train / 228 validation;
-validation is not undersampled again. Those counts refer to originals: internal
-fitting now also uses 1,824 shared augmented views, and final refit uses 2,280
-views alongside all originals. CV scores originals only and attaches views within
-each fitting fold, without a preassigned split file. Existing test rows remain
-unchanged. See [Shared Augmentation](shared_augmentation.md); earlier array-size
-examples below describe unaugmented runs.
+by image ID and DL order. The 1,140 originals and 2,280 views are now pooled before
+the ordinary runtime split: 2,736 fitting rows / 684 validation rows. Views are
+eligible for either side without parent grouping. Validation is not undersampled
+again. Ordinary search CV also splits mixed rows; its scores can be optimistic
+because relatives cross folds. The separate nested CV analysis still protects
+held-out originals. Final refit uses all 3,420 rows; test stays untouched.
+See [Shared Augmentation](shared_augmentation.md); earlier array-size examples
+below describe older runs.
 
 The current [Thesis Evaluation Protocol](thesis_evaluation_protocol.md) describes rejection, complexity, image audits and statistical evidence. Training defaults to consensus top-50. Regenerate historical feature-selection manifests before batch training.
 

@@ -18,7 +18,7 @@ The existing filename is `run_pipeline.py`, not `run_pipelin.py`.
 4. Train/CV/evaluate full-fine-tuning DL.
 5. Train/CV/evaluate partial-fine-tuning DL.
 6. Select SL features on original balanced train rows and export reduced CSVs.
-7. Train/test the exported SL batch with fitting-only augmented descriptors.
+7. Train/test the SL batch with pooled original/augmented training and validation rows.
 8. Run independent nested SL CV, MI top-50, for the four classifiers available.
 9. Analyze SL outer-fold scores within the SL family.
 10. Analyze DL outer-fold scores within the DL family.
@@ -65,5 +65,8 @@ The HTML report is:
 No detector, crop, rename or original train/test splitting stages are rerun.
 Prepared `dataset_bbox/train` and `dataset_bbox/test` remain prerequisites.
 No validation-assignment file is precreated. Rejection behavior is unchanged.
+Ordinary validation is a row-level split of the augmented pool; relatives may
+cross training/validation and inflate those scores. Separate independent outer
+CV safeguards remain enabled; untouched test IDs still join across SL/DL reports.
 See [Shared Augmentation](shared_augmentation.md) for sampling, seed controls,
 fold isolation and remaining methodological limitations.

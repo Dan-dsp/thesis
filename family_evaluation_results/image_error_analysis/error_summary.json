@@ -2,7 +2,7 @@
   "images": 149,
   "evaluators": 6,
   "images_evaluated_by_both_families": 149,
-  "images_with_errors_in_both_families": 5,
+  "images_with_errors_in_both_families": 6,
   "images_missing_files": 0,
   "definition": "Family error means at least one evaluated classifier in that family was wrong.",
   "scope": "Descriptive shared-image inspection, not a pooled ranking or causal analysis.",

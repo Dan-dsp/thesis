@@ -1,6 +1,7 @@
 sample_key,true_label,image_path,evaluations,correct_count,error_count,sl_evaluations,sl_errors,dl_evaluations,dl_errors,evaluated_by_both_families,error_group
-ocreatus_underwoodii/ML641755386_b0.jpg,ocreatus_underwoodii,F:\01_Univalle\01_TG\dataset_bbox\test\ocreatus_underwoodii\ML641755386_b0.jpg,6,0,6,4,4,2,2,True,both_families_error
-florisuga_mellivora/ML641247047_b0.jpg,florisuga_mellivora,F:\01_Univalle\01_TG\dataset_bbox\test\florisuga_mellivora\ML641247047_b0.jpg,6,1,5,4,4,2,1,True,both_families_error
-ramphocelus_flamigerus/ML640048808_b0.jpg,ramphocelus_flamigerus,F:\01_Univalle\01_TG\dataset_bbox\test\ramphocelus_flamigerus\ML640048808_b0.jpg,6,1,5,4,4,2,1,True,both_families_error
-ramphocelus_flamigerus/ML639957291_b0.jpg,ramphocelus_flamigerus,F:\01_Univalle\01_TG\dataset_bbox\test\ramphocelus_flamigerus\ML639957291_b0.jpg,6,2,4,4,3,2,1,True,both_families_error
-ocreatus_underwoodii/ML638747115_b0.jpg,ocreatus_underwoodii,F:\01_Univalle\01_TG\dataset_bbox\test\ocreatus_underwoodii\ML638747115_b0.jpg,6,4,2,4,1,2,1,True,both_families_error
+florisuga_mellivora/ML641247047_b0.jpg,florisuga_mellivora,F:\01_Univalle\01_TG\dataset_bbox\test\florisuga_mellivora\ML641247047_b0.jpg,6,0,6,4,4,2,2,True,both_families_error
+colibri_delphinae/ML641964967_b0.jpg,colibri_delphinae,F:\01_Univalle\01_TG\dataset_bbox\test\colibri_delphinae\ML641964967_b0.jpg,6,1,5,4,4,2,1,True,both_families_error
+florisuga_mellivora/ML641185476_b0.jpg,florisuga_mellivora,F:\01_Univalle\01_TG\dataset_bbox\test\florisuga_mellivora\ML641185476_b0.jpg,6,1,5,4,4,2,1,True,both_families_error
+florisuga_mellivora/ML642129628_b0.jpg,florisuga_mellivora,F:\01_Univalle\01_TG\dataset_bbox\test\florisuga_mellivora\ML642129628_b0.jpg,6,1,5,4,4,2,1,True,both_families_error
+ocreatus_underwoodii/ML641755386_b0.jpg,ocreatus_underwoodii,F:\01_Univalle\01_TG\dataset_bbox\test\ocreatus_underwoodii\ML641755386_b0.jpg,6,1,5,4,4,2,1,True,both_families_error
+ocreatus_underwoodii/ML638747115_b0.jpg,ocreatus_underwoodii,F:\01_Univalle\01_TG\dataset_bbox\test\ocreatus_underwoodii\ML638747115_b0.jpg,6,2,4,4,3,2,1,True,both_families_error

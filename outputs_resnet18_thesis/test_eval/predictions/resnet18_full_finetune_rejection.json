@@ -1,0 +1,19 @@
+{
+  "policy": {
+    "threshold": 0.0,
+    "status": "validation_target_met",
+    "target_validation_accuracy": 0.9,
+    "validation_samples": 513,
+    "validation_accepted": 513,
+    "validation_accuracy_accepted": 1.0,
+    "minimum_validation_accepted": 52,
+    "confidence_kind": "uncalibrated_probability_of_predicted_class",
+    "selection_data": "internal_validation_only"
+  },
+  "samples": 149,
+  "accepted": 149,
+  "coverage": 1.0,
+  "accuracy_without_rejection": 0.9798657718120806,
+  "accuracy_accepted": 0.9798657718120806,
+  "correct_and_accepted_fraction": 0.9798657718120806
+}

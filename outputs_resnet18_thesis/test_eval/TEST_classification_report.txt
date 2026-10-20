@@ -1,0 +1,20 @@
+Test Accuracy: 0.977273
+
+                         precision    recall  f1-score   support
+
+anisognathus_somptuosus     1.0000    1.0000    1.0000        11
+     chlorophanes_spiza     1.0000    1.0000    1.0000        11
+      colibri_delphinae     1.0000    0.9091    0.9524        11
+    florisuga_mellivora     1.0000    0.8182    0.9000        11
+     myioborus_miniatus     1.0000    1.0000    1.0000        11
+   ocreatus_underwoodii     0.8462    1.0000    0.9167        11
+ ramphocelus_flamigerus     1.0000    1.0000    1.0000        11
+        setophaga_fusca     1.0000    1.0000    1.0000        11
+    stilpnia_vitriolina     1.0000    1.0000    1.0000        11
+         tangara_arthus     1.0000    1.0000    1.0000        11
+       turdus_ignobilis     0.9167    1.0000    0.9565        11
+   zonotrichia_capensis     1.0000    1.0000    1.0000        11
+
+               accuracy                         0.9773       132
+              macro avg     0.9802    0.9773    0.9771       132
+           weighted avg     0.9802    0.9773    0.9771       132

@@ -9,7 +9,7 @@ End-to-end shallow-learning pipeline for:
 
 Workflow:
 1) Load feature CSV with split column (train/test)
-2) Build an internal validation split from the TRAIN rows only
+2) Pool original/augmented TRAIN rows, then create internal validation
 3) Hyperparameter search on the internal TRAIN subset (Stratified K-Fold CV)
 4) Evaluate best model on the internal VAL subset
 5) Refit best model on the shared balanced TRAIN pool, evaluate once on TEST
@@ -31,8 +31,8 @@ import joblib
 import numpy as np
 import pandas as pd
 from shared_augmentation import (
-    METADATA as AUGMENTATION_METADATA, TrainingOnlyAugmentationCV,
-    expanded_training_indices, validate_feature_augmentation,
+    METADATA as AUGMENTATION_METADATA,
+    validate_feature_augmentation,
 )
 from result_plots import plot_grid_search, plot_model_metrics
 from shared_training_pool import (
@@ -326,7 +326,7 @@ def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42,
                        pool_manifest_path: str | Path | None = DEFAULT_POOL_MANIFEST) -> Dict[str, Any]:
     """Load one feature CSV and prepare train, internal validation, and untouched test arrays.
 
-    Only original ``train`` rows are split for validation. Original ``test``
+    Original and augmented training rows are pooled before validation splitting. Original ``test``
     rows remain unseen until final evaluation to preserve an honest test score.
     """
     # The original test split stays untouched; validation comes only from train.
@@ -358,7 +358,7 @@ def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42,
     splits = df["split"].to_numpy()
 
     # These masks preserve the producer-defined test partition exactly.
-    train_mask = splits == "train"
+    train_mask = np.isin(splits, ["train", "train_augmented"])
     test_mask = splits == "test"
 
     if not train_mask.any():
@@ -428,7 +428,7 @@ def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42,
     absolute_internal_train = absolute_train_indices[train_idx]
     absolute_internal_val = absolute_train_indices[val_idx]
 
-    # Record original rows assigned to each pipeline subset for reproducibility.
+    # Record every mixed-pool row assigned to a subset for reproducibility.
     assignment = pd.Series("ignored", index=df.index, dtype=object)
     assignment.iloc[absolute_internal_train] = "train_internal"
     assignment.iloc[absolute_internal_val] = "val_internal"
@@ -459,22 +459,19 @@ def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42,
     filenames = test_metadata.get("orig_filename", pd.Series(absolute_test_indices.astype(str)))
     test_metadata["sample_key"] = test_metadata["species"].astype(str) + "/" + filenames.astype(str)
 
-    # Keep the existing runtime split of originals. Attach only fitting-image views.
-    expanded = expanded_training_indices(df, absolute_internal_train)
-    X_train, y_train = X[expanded], y[expanded]
-    full_mask = df.split.isin(["train", "train_augmented"])
-    X_train_full, y_train_full = X[full_mask], y[full_mask]
+    # Requested row-level protocol: do not group original/augmented relatives.
     assert_all_finite("augmented training features", X_train_full)
-    training_cv_frame = df.iloc[expanded].reset_index(drop=True)
-    extra = np.setdiff1d(expanded, absolute_internal_train)
-    if len(extra):
-        added = df.loc[extra, metadata_cols_present].copy().reset_index(names="row_index")
-        added["pipeline_split"] = "train_internal_augmented"
-        split_membership_df = pd.concat([split_membership_df, added], ignore_index=True)
-    split_summary.update(train_internal_samples=len(X_train), train_full_samples=len(X_train_full),
-                         augmented_internal_samples=len(extra),
+    training_cv_frame = df.iloc[absolute_internal_train].reset_index(drop=True)
+    n_aug_train = int(training_cv_frame.split.eq("train_augmented").sum())
+    n_aug_val = int(df.iloc[absolute_internal_val].split.eq("train_augmented").sum())
+    split_summary.update(validation_protocol="pooled_rows_after_augmentation_v1",
+                         augmented_internal_samples=n_aug_train,
+                         augmented_validation_samples=n_aug_val,
                          augmentation_id=(df.loc[df.split.eq("train_augmented"), "augmentation_id"].iloc[0]
-                                          if len(extra) else None))
+                                          if df.split.eq("train_augmented").any() else None))
+    if n_aug_train or n_aug_val:
+        print("[WARNING] Row-level augmented validation can share source images with fitting rows; "
+              "validation/search scores are not independent source-image evidence. Test is unchanged.")
 
     return {
         "training_cv_frame": training_cv_frame,
@@ -827,7 +824,7 @@ def run_training_pipeline(
 
     stage_start = time.perf_counter()
     # Use the same stratified folds for every model to make CV scores comparable.
-    cv = TrainingOnlyAugmentationCV(data["training_cv_frame"], folds=cv_folds, seed=seed)
+    cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=seed)
     spaces = make_model_spaces(
         seed=seed,
         tree_model_n_jobs=tree_model_n_jobs,
