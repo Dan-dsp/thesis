@@ -2,6 +2,12 @@
 
 This index covers only `.py` files directly inside `01_Python`.
 
+`sl_normality.py`: [within-species tests and distribution figures](sl_normality.md),
+including a diagnostics-only command that does not retrain models.
+
+Start with the [thesis execution roadmap](thesis_roadmap.md) for dataset counts,
+augmentation, training epochs, cross-validation, checkpoints and output folders.
+
 | File | Role | Pipeline status |
 | --- | --- | --- |
 | `split_dataset.py` | Creates train/test image folders | Dataset preparation |

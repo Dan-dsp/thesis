@@ -451,6 +451,7 @@ def run_feature_comparison_workflow(
         selection_df,
         feature_names,
         save_dir=output_dirs["exploratory"] / "shapiro",
+        label_col=label_col,
     )
     correlation_df = plot_correlation_matrix(
         selection_df,
@@ -459,8 +460,8 @@ def run_feature_comparison_workflow(
         file_stem="global_feature_correlation",
     )
     print(
-        f"\n[Exploratory] Shapiro marked {(shapiro_df['gaussian_at_alpha']).sum()} "
-        f"features as Gaussian at alpha=0.05."
+        f"\n[Exploratory] Within-species Shapiro: "
+        f"{shapiro_df['test_status'].value_counts().to_dict()} (feature/species pairs)."
     )
     print(f"[Exploratory] Global correlation matrix shape: {correlation_df.shape}")
     progress.update(1)

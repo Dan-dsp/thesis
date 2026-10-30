@@ -16,6 +16,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 import json
 import re
+import warnings
 from pathlib import Path
 from typing import Any, cast
 
@@ -345,7 +346,7 @@ def save_top_ranked_feature_slices(
     return slices
 
 
-def run_shapiro_tests(
+def _run_pooled_shapiro_tests(
     df: pd.DataFrame,
     feature_names: list[str],
     save_dir: str | Path | None = None,
@@ -378,10 +379,10 @@ def run_shapiro_tests(
         used_values = values
         was_subsampled = False
 
-        if values.size < 3:
+        if values.size < 3 or np.ptp(values) == 0:
             w_stat = np.nan
             p_value = np.nan
-            note = "Not enough finite samples for Shapiro."
+            note = "Not testable: fewer than 3 finite values or constant feature."
         else:
             if values.size > max_samples:
                 sample_idx = rng.choice(values.size, size=max_samples, replace=False)
@@ -390,7 +391,12 @@ def run_shapiro_tests(
                 note = f"Subsampled to {max_samples} values for Shapiro."
 
             try:
-                w_stat, p_value = shapiro(used_values)
+                with warnings.catch_warnings(record=True) as diagnostic_warnings:
+                    warnings.simplefilter("always", UserWarning)
+                    w_stat, p_value = shapiro(used_values)
+                if diagnostic_warnings:
+                    w_stat, p_value = np.nan, np.nan
+                    note = "Not testable: " + "; ".join(str(w.message) for w in diagnostic_warnings)
             except Exception as exc:  # pragma: no cover - defensive safeguard
                 w_stat = np.nan
                 p_value = np.nan
@@ -436,6 +442,15 @@ def run_shapiro_tests(
         plt.close(fig)
 
     return result
+
+
+def run_shapiro_tests(df, feature_names, save_dir=None, alpha=0.05,
+                      max_samples=5000, random_state=42, label_col="species"):
+    """Explore normality within species, excluding test and augmented rows."""
+    from sl_normality import analyze_within_species
+
+    return analyze_within_species(df, feature_names, save_dir, alpha, max_samples,
+                                  random_state, label_col)
 
 
 def compute_anova_scores(

@@ -33,7 +33,8 @@ The script loads the complete dataset but uses only rows with split == train for
 
 The training rows are used for:
 
-- Shapiro-Wilk normality test
+- Shapiro-Wilk tests within each species, with representative distribution grids
+  (see [normality diagnostics](sl_normality.md))
 - correlation matrix
 
 This gives a training-data-only statistical and redundancy check before feature selection starts.

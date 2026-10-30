@@ -11,7 +11,8 @@ test rows are retained for export. See [Shared Training Pool](shared_training_po
 
 Selection now also saves RFECV curves with fold variability, wrapper permutation
 importance, embedded importance, grid-search diagnostics, PCA feature ranking
-and a Shapiro p-value histogram. See [Result Plots](result_plots.md).
+and within-species Shapiro p-value histograms and representative distribution
+grids. See [Within-Species Normality](sl_normality.md) and [Result Plots](result_plots.md).
 
 Reusable implementation library behind SL feature comparison. It contains data-cleaning helpers, Shapiro tests, ANOVA, Fisher score, mutual information, PCA ranking, plotting, RFECV wrappers, and embedded feature-importance methods.
 

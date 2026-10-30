@@ -89,7 +89,7 @@ class ResultPlotTests(unittest.TestCase):
                       for column in ["F_score", "fisher_score", "mutual_info", "weighted_abs_loading"]]
             compare_filter_method_rankings(*frames, save_dir=root / "filters", top_k=3)
             compare_stage_feature_lists({"filters": names[:2], "knn": names[1:]}, root / "stages")
-            run_shapiro_tests(pd.DataFrame({name: np.arange(20) for name in names}),
+            run_shapiro_tests(pd.DataFrame({name: np.arange(20) for name in names}).assign(species="example"),
                              names, root / "normality")
             rank_pca_features(pd.DataFrame({"PC1": [0.5, 0.2, 0.1]}, index=names),
                               np.array([1.0]), root / "pca")

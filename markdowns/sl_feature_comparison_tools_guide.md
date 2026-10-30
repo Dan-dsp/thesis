@@ -63,7 +63,9 @@ Encodes class labels into integers for models such as XGBoost and for wrapper / 
 
 ## `run_shapiro_tests(...)`
 
-Runs a Shapiro-Wilk normality test for each feature.
+Runs a Shapiro-Wilk test for each feature **within each species**, on original
+training rows only. See [within-species normality](sl_normality.md) for the
+representative-feature plots, explicit not-testable status and rerun command.
 
 Design notes:
 
@@ -73,8 +75,9 @@ Design notes:
 
 Saved outputs include:
 
-- full CSV with `W`, `p_value`, and Gaussian/non-Gaussian flag
+- full CSV with species, `shapiro_W`, `p_value`, and `test_status`
 - summary JSON
+- species summary CSV, representative-feature manifest and distribution grids
 
 ## `plot_correlation_matrix(...)`
 

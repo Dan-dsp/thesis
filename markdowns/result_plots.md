@@ -11,7 +11,7 @@ Under `F:/01_Univalle/01_TG/sl_results`:
 
 | Folder | Images |
 | --- | --- |
-| `exploratory/shapiro` | Shapiro p-value histogram; normality is exploratory, not a Gaussian requirement for the classifiers |
+| `exploratory/shapiro` | Within-species Shapiro p-value histograms; `distributions/` has one species-grid per descriptor family. See [normality diagnostics](sl_normality.md). No Gaussian requirement or training transformation is imposed. |
 | `filters/anova`, `filters/fisher`, `filters/mutual_information` | Existing top-20 score plots |
 | `filters/pca` | Existing explained-variance plot, plus original-feature loading ranking |
 | `filters/comparison` | Consensus votes and pairwise top-100 Jaccard overlap |

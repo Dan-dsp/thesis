@@ -1,0 +1,307 @@
+<div id="thesis-roadmap-20261029">
+  <style>
+    #thesis-roadmap-20261029 { color: var(--foreground); }
+    #thesis-roadmap-20261029 .stage-heading { padding-right: 90px; }
+    #thesis-roadmap-20261029 .stage-content { margin: 20px 0; }
+    #thesis-roadmap-20261029 code { overflow-wrap: anywhere; }
+    #thesis-roadmap-20261029 .pool { display: flex; gap: 3px; margin: 16px 0 8px; }
+    #thesis-roadmap-20261029 .pool-part { height: 14px; background: var(--viz-series-1); }
+    #thesis-roadmap-20261029 .pool-part.views { background: var(--viz-series-2); }
+    #thesis-roadmap-20261029 .legend { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+    #thesis-roadmap-20261029 .swatch { display: inline-block; width: 10px; height: 10px; background: var(--viz-series-1); margin-right: 5px; }
+    #thesis-roadmap-20261029 .swatch.views { background: var(--viz-series-2); }
+    #thesis-roadmap-20261029 .fields { margin-top: 16px; }
+    #thesis-roadmap-20261029 .actions { margin-top: 12px; }
+  </style>
+  <h2 class="stage-heading">Thesis roadmap</h2>
+  <div class="text-small text-muted">Current code: 29 October 2026</div>
+  <div class="pool" role="img" aria-label="Shared development pool: 1140 originals and 2280 augmented views, 3420 total. Test: 149 separate original images.">
+    <div class="pool-part" style="flex:1"></div><div class="pool-part views" style="flex:2"></div>
+  </div>
+  <div class="legend text-small">
+    <span><span class="swatch"></span>1,140 originals</span>
+    <span><span class="swatch views"></span>2,280 saved views</span>
+    <span>149 test images: separate</span>
+  </div>
+  <hr>
+  <label class="form-label" for="thesis-stage">Roadmap section</label>
+  <select class="form-select" id="thesis-stage">
+    <optgroup label="Execution order">
+    <option value="0">1. Shared balanced image list</option>
+    <option value="1">2. Saved augmentation</option>
+    <option value="2">3. SL descriptor extraction</option>
+    <option value="3">4. DL full fine-tuning + CV</option>
+    <option value="4">5. DL partial fine-tuning + CV</option>
+    <option value="5">6. SL feature selection: 29 variants</option>
+    <option value="6">7. SL batch training: 116 final models</option>
+    <option value="7">8. SL independent nested CV</option>
+    <option value="8">9. SL within-family statistics</option>
+    <option value="9">10. DL within-family statistics</option>
+    <option value="10">11. Test predictions + shared errors</option>
+    </optgroup>
+    <optgroup label="Methodology proposed solution for Shallow Learning">
+      <option value="11" selected>SL: Introduction</option>
+      <option value="12">SL: Dataset construction with feature extraction</option>
+      <option value="13">SL: Feature comparison and selection</option>
+      <option value="14">SL: Classifier training and model comparison</option>
+    </optgroup>
+  </select>
+  <section class="stage-content" aria-live="polite" aria-atomic="true">
+    <h3 id="thesis-stage-title">Shared balanced image list</h3>
+    <code id="thesis-script">shared_training_pool.py</code>
+    <table class="table table-sm"><tbody id="thesis-details"></tbody></table>
+  </section>
+  <div class="viz-row">
+    <button class="btn" type="button" id="thesis-prev" aria-label="Previous stage" data-tooltip="Previous stage"><i data-lucide="arrow-left" aria-hidden="true"></i></button>
+    <span id="thesis-position" class="tabular-nums">1 / 11</span>
+    <button class="btn" type="button" id="thesis-next" aria-label="Next stage" data-tooltip="Next stage"><i data-lucide="arrow-right" aria-hidden="true"></i></button>
+  </div>
+  <hr>
+  <div class="fields">
+    <label class="form-label" for="thesis-correction">Correction or question for this section</label>
+    <textarea class="form-control" id="thesis-correction" rows="3" maxlength="800" placeholder="What should we clarify or revise?"></textarea>
+  </div>
+  <div class="viz-row actions">
+    <button type="button" class="btn btn-primary" id="thesis-discuss" disabled><i data-lucide="message-square" aria-hidden="true"></i>Discuss with Codex</button>
+    <span class="text-small text-muted">Discussion only; training code unchanged.</span>
+  </div>
+  <div id="thesis-status" class="text-small" role="status"></div>
+  <script>
+    (() => {
+      const root = document.getElementById('thesis-roadmap-20261029');
+      const stages = [
+        {title:'Shared balanced image list', script:'shared_training_pool.py', rows:[
+          ['Input','1,235 original training crops; 12 species'],
+          ['Selection','95 per species; 1,140 shared originals; seed 42'],
+          ['Output','training_protocol/balanced_training_pool_seed_42.json + CSV'],
+          ['Original files','Unchanged; test folder excluded'],
+          ['Upstream','Detector, cropping and original train/test split already completed']
+        ]},
+        {title:'Saved augmentation', script:'shared_augmentation.py', rows:[
+          ['Input','1,140 selected originals'],
+          ['Version 1','Horizontal flip + rotation within -10 to +10 degrees'],
+          ['Version 2','Independent rotation within -10 to +10 degrees; no flip'],
+          ['Result','Original + two views = 3,420 development images'],
+          ['Randomness','Seeded per-image/view angles; same saved views every epoch'],
+          ['Output','training_protocol/augmentation_seed_42/: images + manifest + protocol']
+        ]},
+        {title:'SL descriptor extraction', script:'sl_dataframe_main.py', rows:[
+          ['Input','Original train/test crops + saved augmented views'],
+          ['Processing','224 x 224 images; handcrafted descriptors; no model training'],
+          ['Master CSV','3,664 expected rows before balanced-pool filtering'],
+          ['Output','dataset_features/shallow_learning_birds.csv + per-image CSVs'],
+          ['Families','SL uses descriptors; DL uses images directly']
+        ]},
+        {title:'DL full fine-tuning + CV', script:'dl_transfer_learning_bird_classifier.py', rows:[
+          ['Architecture','ImageNet-pretrained ResNet18; all weights fine-tuned after warmup'],
+          ['Outer CV first','5 fresh fits; each 2 warmup + 3 fine-tuning epochs'],
+          ['Final fit','1 fresh fit; 3 warmup + 5 fine-tuning epochs'],
+          ['Final split','2,907 fitting + 513 validation rows (15%)'],
+          ['Optimizer','Adam; head LR 0.001, fine-tuning LR 0.0001; batch 32'],
+          ['Checkpoint','Best validation accuracy across epochs; no full-pool refit'],
+          ['Output','01_Python/outputs_resnet18_thesis/: kfold_train_only, final_train, test_eval'],
+          ['Caution','Internal validation can mix related views; outer holdout excludes their views']
+        ]},
+        {title:'DL partial fine-tuning + CV', script:'dl_transfer_learning_bird_classifier_partial_finetune.py', rows:[
+          ['Architecture','ResNet18; head + last four parameter-bearing internal modules fine-tuned'],
+          ['Outer CV first','5 fresh fits; each 2 warmup + 3 fine-tuning epochs'],
+          ['Final fit','1 fresh fit; 3 warmup + 5 fine-tuning epochs'],
+          ['Final split','2,907 fitting + 513 validation rows (15%)'],
+          ['Checkpoint','Best validation accuracy; no full-pool refit'],
+          ['Both DL runs','12 fits; 66 aggregate epochs, not one 66-epoch model'],
+          ['Output','01_Python/outputs_resnet18_thesis_partial_finetune/']
+        ]},
+        {title:'SL feature selection: 29 variants', script:'sl_feature_comparison.py', rows:[
+          ['Selection input','1,140 original balanced training rows only; no test or augmentation'],
+          ['Distribution examination','Before ranking: within-species Shapiro-Wilk tests, one distribution grid per descriptor family and Pearson correlations. After selection: per-species violin plots and subset correlations.'],
+          ['Filters','ANOVA, Fisher, MI, PCA ranking x top 100/80/50 = 12'],
+          ['Consensus','Top 100/80/50 = 3'],
+          ['Wrappers','SVM + k-NN x RFECV selection and top 100/80/50 = 8'],
+          ['Embedded','Random Forest + XGBoost x top 100/80/50 = 6'],
+          ['Output','sl_results/: rankings, plots, training_ready_datasets + manifest'],
+          ['Exports','Same image rows, different feature columns; 29 with XGBoost available']
+        ]},
+        {title:'SL batch training: 116 final models', script:'sl_training_pipeline.py --run-exported-batch', rows:[
+          ['Per variant','2,736 fitting + 684 validation rows (20%)'],
+          ['Search','5-fold GridSearchCV; macro-F1; 4 model families'],
+          ['Search workload','320 candidate-fold fits x 29 variants = 9,280, plus refits/calibration'],
+          ['Selection','Internal-validation macro-F1; not test ranking'],
+          ['Final fitting','All 3,420 development rows, including former validation rows'],
+          ['Saved models','29 variants x 4 families = 116 final .pkl files'],
+          ['Output','sl_outputs_batch/batch_TIMESTAMP/: per_dataset + comparisons + selected_model.json'],
+          ['Caution','Mixed-row validation and preselected rankings can inflate internal scores']
+        ]},
+        {title:'SL independent nested CV', script:'thesis_validation.py sl-cv --method mi --features 50', rows:[
+          ['Scope','MI top-50 only; not all 29 feature variants'],
+          ['Outer CV','5 folds; each holds out 228 originals'],
+          ['Development','912 originals + 1,824 views per outer fold'],
+          ['Inner CV','5 folds; feature selection and hyperparameter tuning inside each fit'],
+          ['Isolation','Held-out originals evaluated without their views entering fitting'],
+          ['Workload','1,600 inner candidate-fold fits + 20 outer refits; no repeated seeds'],
+          ['Output','sl_nested_cv/: 20 outer scores + parameters, plots and protocol']
+        ]},
+        {title:'SL within-family statistics', script:'thesis_validation.py compare <SL outer scores>', rows:[
+          ['Input','5 outer macro-F1 scores for each of 4 MI-top-50 model families'],
+          ['Comparisons','6 paired model comparisons, within SL only'],
+          ['Method','Nadeau-Bengio corrected paired t-test + Holm adjustment'],
+          ['Output','sl_statistics/: family_cv_summary.csv, within_family_tests.csv, plots'],
+          ['Limit','Five folds; limited power; not evidence for all 29 variants']
+        ]},
+        {title:'DL within-family statistics', script:'thesis_validation.py compare <both DL outer-score files>', rows:[
+          ['Input','5 outer macro-F1 scores for each DL configuration'],
+          ['Comparison','Full versus partial fine-tuning; one paired comparison'],
+          ['Method','Nadeau-Bengio corrected paired t-test + Holm adjustment'],
+          ['Output','dl_statistics/: family_cv_summary.csv, within_family_tests.csv, plots'],
+          ['Scope','Shorter CV training budget (2+3 epochs); no joint SL-versus-DL test']
+        ]},
+        {title:'Test predictions + shared errors', script:'compare_dl_sl_models.py', rows:[
+          ['Models','2 final DL checkpoints + 4 SL models from the winning feature-variant run'],
+          ['Test set','All 149 originals; no augmentation; no training'],
+          ['Identity','Same species/filename keys join SL and DL predictions'],
+          ['Analysis','Correct/incorrect per image; shared errors; species and confusion patterns'],
+          ['Output','01_Python/family_evaluation_results/: sl, dl, image_error_analysis'],
+          ['Visual report','image_error_analysis/error_gallery.html'],
+          ['Interpretation','Raw predictions, without rejection; conditions need annotation'],
+          ['Metric population','Final report: 149; training-script balanced summaries: 132']
+        ]},
+        {title:'SL: Introduction', script:'Methodology proposed solution for Shallow Learning', rows:[
+          ['Objective','Assign each bird crop to one of 12 species using measurable visual descriptors.'],
+          ['Proposed solution','Image crops > numerical descriptors > selected features > trained classifier > species prediction.'],
+          ['Why descriptors?','SL classifiers receive a numerical feature vector, not the image pixels directly. Shape, color and texture measurements describe each crop.'],
+          ['Why selection?','Reduce the vector to a useful subset of original descriptors before training; compare alternative subsets rather than assuming every descriptor helps.'],
+          ['Four classifiers','SVM with an RBF kernel, k-NN, Random Forest and XGBoost. The 116 final models are configurations of these four families, not 116 different algorithms.'],
+          ['Shared data','SL and DL use the same 1,140 balanced originals and 2,280 saved augmented views. The 149 test originals remain separate.'],
+          ['Evidence','Internal validation guides model choice; independent nested CV evaluates MI top-50; final test predictions support performance and image-error analysis.']
+        ]},
+        {title:'SL: Dataset construction with feature extraction', script:'shared_training_pool.py > shared_augmentation.py > sl_dataframe_main.py', rows:[
+          ['Starting images','Prepared bird crops in dataset_bbox/train and dataset_bbox/test. The runner does not perform detection or create this original split.'],
+          ['Balanced development pool','Select 95 original images per species using the shared seed-42 list. Add two saved augmented versions per original, giving 3,420 development images.'],
+          ['Extraction','Resize each crop to 224 x 224 and calculate descriptors for originals, augmented views and test images. Extracting test descriptors does not train a classifier or select features.'],
+          ['Shape and structure','Hu and Zernike moments, Fourier descriptors, affine invariants and log-polar FFT measurements summarize geometric or frequency structure.'],
+          ['Color and texture','HSV histograms and RGB moments summarize color; LBP, HOG, GLCM, Gabor and edge histograms describe texture, gradients and edges.'],
+          ['One CSV row','One image/view, its species label, original filename, split and provenance metadata, followed by numerical descriptor columns. Metadata is not a predictor.'],
+          ['Counts','Master CSV: 3,664 expected rows, including all 1,235 available train originals. Balanced selected-feature CSVs: 3,420 development + 149 test = 3,569 rows.'],
+          ['Output','dataset_features/shallow_learning_birds.csv and per-image CSVs. Image identity is retained so later SL and DL predictions can be matched.']
+        ]},
+        {title:'SL: Feature comparison and selection', script:'sl_feature_comparison.py', rows:[
+          ['Selection population','Rank descriptors using only the 1,140 balanced original training images. Test labels and augmented rows do not determine these rankings.'],
+          ['Why examine distributions?','Before ranking, describe how feature values behave and whether descriptors carry overlapping information. After selection, inspect whether their values separate species. These are diagnostic checks, not automatic exclusion rules.'],
+          ['Shapiro-Wilk procedure','run_shapiro_tests tests every feature separately within each species, using original training images only. Alpha = 0.05; at most 5,000 finite values per feature/species. The current 95 originals per species need no subsampling.'],
+          ['Why Shapiro and a sample cap?','Shapiro-Wilk checks departures from a Gaussian distribution. The 5,000-value cap limits work and avoids the large-sample p-value accuracy concern noted in the implementation; seed 42 makes any subsampling reproducible.'],
+          ['Reading the result','p < 0.05: reject normality. p >= 0.05: insufficient evidence to reject, not proof of a Gaussian distribution. The gaussian_at_alpha flag means only the latter. W is the test statistic, not a classification score.'],
+          ['Report scope','313 features x 12 species = 3,756 tests. Historical pooled counts are superseded. test_status separates rejected, not_rejected and not_testable (constant or insufficient finite values).'],
+          ['Normality limits','Within-species marginal tests do not establish independence, equal variances or multivariate normality. P-values are unadjusted for multiple testing and exploratory.'],
+          ['Effect on training','The code does not discard non-Gaussian features, switch selectors, or transform features because of Shapiro results. SVM, k-NN, Random Forest and XGBoost do not require Gaussian input features. StandardScaler changes scale, not distribution shape.'],
+          ['Correlation: why and how','Pearson correlations describe pairwise linear relationships, helping identify potentially redundant descriptors. Save the full matrix; show only the first 40 features in heatmaps for readability. No automatic correlation-threshold pruning occurs here.'],
+          ['Per-species distributions','After selection, violin plots show value distributions and medians by species for up to the first 12 features in each diagnostic list. Separation suggests discrimination; overlap shows why one feature alone may be insufficient. Neither proves predictive performance.'],
+          ['Diagnostic scope','Violin plots and subset correlations cover consensus top-50, SVM/k-NN RFECV selections, and Random Forest/XGBoost top-50 lists, using the same original training rows. They do not cover every feature in every exported variant.'],
+          ['Distribution outputs','sl_results/exploratory/shapiro/: species/feature tests, species summary, p-value plot and representative_features.csv. distributions/ contains one raw-value histogram grid per active descriptor family (12), with the same feature across all species and a Gaussian reference.'],
+          ['Representative choice','Maximum nonconstant-species coverage; ties use existing feature order, never p-values. Diagnostic plots only: no new normalization or model changes. Regenerate independently with python sl_normality.py from 01_Python.'],
+          ['Code references','sl_feature_comparison.py: exploratory stage and run_final_selection_diagnostics. sl_feature_comparison_tools.py: run_shapiro_tests, plot_correlation_matrix and plot_violin_for_features.'],
+          ['Filter methods','ANOVA and Fisher score class separation; mutual information measures dependence on species; PCA loadings rank contributions to variation. PCA exports original descriptors, not component scores.'],
+          ['Consensus','Combine the four filter rankings using agreement and rank information to obtain a shared ordered feature list.'],
+          ['Wrappers','For SVM and k-NN: tune the classifier, use five-fold RFECV to evaluate progressively reduced subsets, then tune again with the selected subset.'],
+          ['Embedded methods','Tune Random Forest and XGBoost, then rank descriptors by the fitted models\' feature importances.'],
+          ['29 variants','12 filter lists + 3 consensus lists + 8 wrapper lists + 6 embedded lists. Top-100, top-80 and top-50 lists use fewer columns, not fewer image rows.'],
+          ['Comparison evidence','Rankings, importance scores, RFECV curves and feature overlaps describe the selections. Subsequent validation scores assess their usefulness for classification.'],
+          ['Outputs','sl_results/ contains selection tables and plots; training_ready_datasets/ contains selected-column CSVs and the batch manifest.'],
+          ['Interpretation limit','Exported rankings precede the batch internal split, and related views can cross that split. Independent nested CV repeats selection inside its folds for MI top-50 only.']
+        ]},
+        {title:'SL: Classifier training and model comparison', script:'sl_training_pipeline.py --run-exported-batch > thesis_validation.py > compare_dl_sl_models.py', rows:[
+          ['Internal split','For each feature variant, split the augmented pool into 2,736 fitting rows (80%) and 684 validation rows (20%). Related original/augmented views can appear on opposite sides.'],
+          ['Classifier behavior','k-NN uses nearby descriptor vectors; SVM learns a nonlinear decision boundary; Random Forest combines randomized trees; XGBoost adds boosted trees sequentially.'],
+          ['Tuning','Five-fold GridSearchCV chooses hyperparameters by macro-F1 on the fitting portion. Scaling is fitted inside SVM/k-NN pipelines; tree pipelines do not use StandardScaler.'],
+          ['Choosing and saving','Use internal-validation macro-F1 for model/variant selection, not test scores. Refit each tuned model on all 3,420 development rows and save its final .pkl.'],
+          ['116 final models','29 feature variants x 4 model families, with XGBoost installed. There are no DL-style epochs, warmup or fine-tuning in this SL stage.'],
+          ['Independent comparison','A separate MI-top-50 experiment uses five outer folds and five inner folds. Selection/tuning happen inside training folds; outer evaluation uses held-out originals without their views in fitting.'],
+          ['Statistical analysis','Compare four SL models using paired outer macro-F1 scores: six comparisons, corrected paired t-tests and Holm adjustment. This does not validate all 29 variants or test SL against DL statistically.'],
+          ['Test and error analysis','Final family reporting evaluates all 149 test originals, matching correct/incorrect SL and DL predictions by image ID. Training-script balanced test summaries instead use 132 images.'],
+          ['Reporting scope','Final comparison loads four SL models from the winning feature-variant run, not all 116. Save performance, confusion matrices, settings, timings and per-image errors under sl_outputs_batch/, sl_nested_cv/, sl_statistics/ and family_evaluation_results/.']
+        ]}
+      ];
+      const select = root.querySelector('#thesis-stage');
+      const title = root.querySelector('#thesis-stage-title');
+      const script = root.querySelector('#thesis-script');
+      const body = root.querySelector('#thesis-details');
+      const prev = root.querySelector('#thesis-prev');
+      const next = root.querySelector('#thesis-next');
+      const position = root.querySelector('#thesis-position');
+      const note = root.querySelector('#thesis-correction');
+      const discuss = root.querySelector('#thesis-discuss');
+      const status = root.querySelector('#thesis-status');
+      let index = 11;
+      let drafts = {};
+      function restore(state) {
+        const value = state && state.privateContent;
+        if (!value || value.version !== 1) return;
+        index = Number.isInteger(value.index) && value.index >= 0 && value.index < stages.length ? value.index : 0;
+        drafts = {};
+        for (let i = 0; i < stages.length; i++) {
+          if (typeof value.drafts?.[i] === 'string') drafts[i] = value.drafts[i].slice(0, 800);
+        }
+      }
+      function persist() {
+        const host = window.openai;
+        if (host?.setWidgetState) {
+          Promise.resolve(host.setWidgetState({
+            modelContent: {stage: index + 1, title: stages[index].title, correction: drafts[index] || ''},
+            privateContent: {version: 1, index, drafts}
+          })).catch(() => {});
+        }
+      }
+      function render() {
+        const stage = stages[index];
+        select.value = String(index);
+        title.textContent = stage.title;
+        script.textContent = stage.script;
+        body.replaceChildren();
+        for (const [label, value] of stage.rows) {
+          const tr = document.createElement('tr');
+          const th = document.createElement('th');
+          th.scope = 'row'; th.textContent = label;
+          const td = document.createElement('td'); td.textContent = value;
+          tr.append(th, td); body.append(tr);
+        }
+        prev.disabled = index === 0 || index === 11;
+        next.disabled = index === 10 || index === stages.length - 1;
+        position.textContent = index < 11 ? `Stage ${index + 1} / 11` : `SL methodology ${index - 10} / 4`;
+        note.value = drafts[index] || '';
+        discuss.disabled = !note.value.trim();
+        status.textContent = '';
+      }
+      function move(value) { index = value; render(); persist(); }
+      select.addEventListener('change', () => move(Number(select.value)));
+      prev.addEventListener('click', () => move(Math.max(index < 11 ? 0 : 11, index - 1)));
+      next.addEventListener('click', () => move(Math.min(index < 11 ? 10 : stages.length - 1, index + 1)));
+      note.addEventListener('input', () => {
+        drafts[index] = note.value;
+        discuss.disabled = !note.value.trim();
+      });
+      note.addEventListener('change', persist);
+      discuss.addEventListener('click', async () => {
+        const stage = stages[index];
+        if (!note.value.trim()) return;
+        persist();
+        if (!window.openai?.sendFollowUpMessage) {
+          status.textContent = 'Chat action unavailable here. Tell me the stage number and your correction in this conversation.';
+          return;
+        }
+        discuss.disabled = true;
+        try {
+          await window.openai.sendFollowUpMessage({
+            title: `Discuss: ${stage.title}`,
+            prompt: `Review the section "${stage.title}" in 01_Python/markdowns/visuals/thesis-roadmap.html and its companion thesis_roadmap.md against the current code. Script/context: ${stage.script}. Current summary: ${JSON.stringify(stage.rows)}. My correction or question: ${note.value.trim()}. Discuss this first; do not change training code unless I explicitly request it.`
+          });
+          status.textContent = 'Follow-up requested; no training code changed.';
+        } catch (error) {
+          status.textContent = 'Follow-up was not sent. You can discuss this stage directly in the conversation.';
+        } finally { discuss.disabled = !note.value.trim(); }
+      });
+      window.addEventListener('openai:set_globals', event => {
+        if (event.detail?.globals?.widgetState) { restore(event.detail.globals.widgetState); render(); }
+      });
+      restore(window.openai?.widgetState);
+      render();
+    })();
+  </script>
+</div>
