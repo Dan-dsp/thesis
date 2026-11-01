@@ -1,8 +1,8 @@
 # `sl_feature_comparison.py`
 
 Normality diagnostics now test every feature **within each species**, using only
-original balanced training images. They save one distribution grid per active
-descriptor family, with the same representative feature across all species.
+original balanced training images. They save highest/lowest mean-Shapiro-W
+distribution grids per descriptor family, with each feature reused across species.
 See [Within-Species Normality](sl_normality.md) for interpretation and the
 diagnostics-only command; no classifier retraining is required for this change.
 

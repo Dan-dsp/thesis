@@ -84,10 +84,10 @@ depends on within-group/residual behavior, variance assumptions and independence
 the within-species Shapiro result alone does not establish these. The code continues to rank
 with ANOVA F-scores regardless of this diagnostic.
 
-One representative feature per active descriptor family is plotted across all
-species, with common histogram bins and fitted Gaussian references (12 PNGs).
-The representative maximizes nonconstant-class coverage, with feature-order
-tie-breaking, never p-value selection. See [normality diagnostics](sl_normality.md)
+The highest and lowest mean-Shapiro-W features per descriptor family are plotted
+across all species, with common histogram bins and Gaussian references (up to 24 PNGs).
+Only features testable in every species are eligible; ties use feature order.
+These are selected extremes, not typical family examples. See [normality diagnostics](sl_normality.md)
 for output paths and the diagnostics-only rerun command. This does not normalize
 or otherwise transform the model inputs.
 

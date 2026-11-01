@@ -34,17 +34,34 @@ class NormalityTests(unittest.TestCase):
                            "hu_1": 1.0, "hu_2": np.arange(16),
                            "lbp_1": [np.nan, np.inf] + [1.] * 14})
         names = ["hu_1", "hu_2", "lbp_1"]
-        reps = representative_features(df, names, "species")
-        self.assertEqual(reps.feature.tolist(), ["hu_2", "lbp_1"])
+        reps = representative_features(run_shapiro_tests(df, names), names)
+        self.assertEqual(reps.loc[reps.family.eq("hu"), "feature"].tolist(), ["hu_2", "hu_2"])
+        self.assertTrue(reps.loc[reps.family.eq("lbp"), "selection_status"].eq("no_fully_testable_feature").all())
         with tempfile.TemporaryDirectory() as tmp:
             result = run_shapiro_tests(df, names, tmp)
             self.assertEqual(len(result), 6)
-            for name in ["distributions/hu_within_species.png", "distributions/lbp_within_species.png",
+            for name in ["distributions/normality_extremes/hu_highest_normality.png",
+                         "distributions/normality_extremes/hu_lowest_normality.png",
                          "shapiro_p_values.png"]:
                 with Image.open(Path(tmp) / name) as image:
                     self.assertGreater(np.asarray(image).std(), 5)
                     self.assertGreater(image.width, 500)
             self.assertTrue((Path(tmp) / "shapiro_by_species_summary.csv").exists())
+
+    def test_extremes_rank_mean_w_not_p_and_require_all_species(self):
+        features = ["hu_1", "hu_2", "hu_3", "hu_4", "hu_5"]
+        tests = pd.DataFrame({
+            "feature": np.repeat(features, 2), "species": ["a", "b"] * 5,
+            "shapiro_W": [0.95, 0.97, 0.6, 0.7, 0.99, np.nan, 0.95, 0.97, 0.8, 0.8],
+            "p_value": [0.1, 0.1, 0.9, 0.9, 0.99, np.nan, 0.1, 0.1, 0.2, 0.2],
+            "test_status": ["not_rejected"] * 5 + ["not_testable"] + ["not_rejected"] * 4,
+        })
+        before = tests.copy(deep=True)
+        reps = representative_features(tests, features)
+        self.assertEqual(reps.feature.tolist(), ["hu_1", "hu_2"])
+        self.assertAlmostEqual(reps.iloc[0].mean_shapiro_W, 0.96)
+        self.assertEqual(reps.eligible_features.tolist(), [4, 4])
+        pd.testing.assert_frame_equal(tests, before)
 
     def test_subsampling_and_invalid_inputs(self):
         df = pd.DataFrame({"species": "a", "hu_1": np.arange(30)})

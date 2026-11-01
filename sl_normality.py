@@ -19,25 +19,38 @@ def finite_values(series):
     return values[np.isfinite(values)]
 
 
-def representative_features(data, features, label_col):
-    """Maximize nonconstant-class coverage; break ties by schema order, not p."""
+def representative_features(tests, features):
+    """Choose mean-W extremes among features testable in every species."""
     rows = []
+    n_species = tests.species.nunique()
     for family in FAMILIES:
         candidates = [f for f in features if f.startswith(family + "_")]
         if not candidates:
             continue
-        coverage = {f: sum(len(np.unique(finite_values(g[f]))) > 1
-                           for _, g in data.groupby(label_col)) for f in candidates}
-        feature = max(candidates, key=coverage.get)
-        rows.append({"family": family, "feature": feature,
-                     "nonconstant_species": coverage[feature],
-                     "selection_rule": "maximum nonconstant-class coverage; ties use schema order"})
-    return pd.DataFrame(rows, columns=["family", "feature", "nonconstant_species", "selection_rule"])
+        scores = {}
+        for feature in candidates:
+            group = tests.loc[tests.feature.eq(feature)]
+            valid = group.loc[group.test_status.ne("not_testable") &
+                              np.isfinite(group.shapiro_W) & np.isfinite(group.p_value)]
+            if len(valid) == n_species and valid.species.nunique() == n_species:
+                scores[feature] = float(valid.shapiro_W.mean())
+        for extreme in ("highest", "lowest"):
+            selector = max if extreme == "highest" else min
+            feature = selector(scores, key=scores.get) if scores else None
+            rows.append({"family": family, "extreme": extreme, "feature": feature,
+                         "mean_shapiro_W": scores.get(feature, np.nan),
+                         "n_species": n_species, "eligible_features": len(scores),
+                         "selection_status": "selected" if scores else "no_fully_testable_feature",
+                         "selection_rule": "mean within-species W; all species testable; ties use schema order"})
+    return pd.DataFrame(rows, columns=["family", "extreme", "feature", "mean_shapiro_W",
+                                      "n_species", "eligible_features", "selection_status", "selection_rule"])
 
 
 def plot_distributions(data, representatives, tests, path, label_col, alpha):
     species = sorted(data[label_col].unique())
     for representative in representatives.itertuples():
+        if representative.selection_status != "selected":
+            continue
         feature = representative.feature
         values = finite_values(data[feature])
         bins = np.histogram_bin_edges(values, bins=15) if values.size else np.linspace(0, 1, 16)
@@ -53,15 +66,16 @@ def plot_distributions(data, representatives, tests, path, label_col, alpha):
             if x.size >= 3 and np.ptp(x) > 0:
                 grid = np.linspace(bins[0], bins[-1], 400)
                 ax.plot(grid, norm.pdf(grid, x.mean(), x.std(ddof=1)), color="#c13f57")
-            p_label = f"p={record.p_value:.3g}" if pd.notna(record.p_value) else "p=unavailable"
+            p_label = f"W={record.shapiro_W:.3f}; p={record.p_value:.3g}" if pd.notna(record.p_value) else "p=unavailable"
             ax.set_title(f"{str(label).replace('_', ' ')}\nn={len(x)}; {p_label}; {record.test_status}", fontsize=9)
             ax.set_xlabel(feature + " (raw descriptor value)", fontsize=8)
             ax.set_ylabel("Density", fontsize=8)
             ax.tick_params(labelsize=8)
         for ax in list(axes.flat)[len(species):]:
             ax.set_visible(False)
-        fig.suptitle(f"{representative.family}: {feature} within species\nOriginal training images; Gaussian reference in red; raw p-values, alpha={alpha}")
-        _save(fig, path / "distributions" / f"{representative.family}_within_species.png")
+        fig.suptitle(f"{representative.family}: {representative.extreme} mean W = {representative.mean_shapiro_W:.4f}; {feature}\nWithin-species training distributions; Gaussian reference in red; raw p-values, alpha={alpha}")
+        _save(fig, path / "distributions" / "normality_extremes" /
+              f"{representative.family}_{representative.extreme}_normality.png")
 
 
 def analyze_within_species(df, features, save_dir=None, alpha=0.05,
@@ -99,7 +113,7 @@ def analyze_within_species(df, features, save_dir=None, alpha=0.05,
             "max_samples_per_species_feature": max_samples, "seed": random_state,
             "interpretation": "Not rejected does not prove Gaussianity; no feature removal or normalization.",
         }, indent=2), encoding="utf-8")
-        representatives = representative_features(data, features, label_col)
+        representatives = representative_features(result, features)
         representatives.to_csv(path / "representative_features.csv", index=False)
         plot_distributions(data, representatives, result, path, label_col, alpha)
         fig, ax = _figure()
@@ -114,13 +128,18 @@ def analyze_within_species(df, features, save_dir=None, alpha=0.05,
 
 
 if __name__ == "__main__":
+    import argparse
     from sl_feature_comparison_tools import load_features_and_labels
     from shared_training_pool import DEFAULT_POOL_MANIFEST
 
     root = Path(__file__).resolve().parent.parent
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--data-csv", type=Path, default=
+                        root / "dataset_features" / "shallow_learning_birds.csv")
+    args = parser.parse_args()
     print("[Normality] Loading descriptors and validating the shared training pool...", flush=True)
     data, _, _, features = load_features_and_labels(
-        root / "sl_results" / "shallow_learning_normality_test_within_class_birds.csv", selection_split="train",
+        args.data_csv, selection_split="train",
         pool_manifest_path=DEFAULT_POOL_MANIFEST, seed=42)
     analyze_within_species(data, features, root / "sl_results" / "exploratory" / "shapiro")
     print("[Normality] Saved within-species tables and distribution PNGs.", flush=True)
