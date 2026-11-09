@@ -254,7 +254,7 @@ from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 from sklearn.metrics import f1_score
 from classification_analysis import (
-    dl_predictions, export_dl_test_audit, finish_dl_training, partition_id,
+    dl_predictions, export_dl_test_audit, partition_id,
 )
 
 
@@ -571,7 +571,7 @@ def train_final_model_with_internal_val(
     dataset_dir_train: str,
     out_dir: Path,
     seed: int = 42,
-    val_ratio: float = 0.15,
+    val_ratio: float = 0.20,
     batch_size: int = 32,
     num_workers: int = 0,
     warmup_epochs: int = 3,
@@ -587,10 +587,10 @@ def train_final_model_with_internal_val(
     Train ONE final model:
     - internal stratified split of TRAIN into train_sub / val_sub
     - warmup + finetune
-    - saves BEST checkpoint by val accuracy
+    - selects by macro-F1, then refits a fresh model on all training rows
 
     Returns:
-    - path to best final checkpoint
+    - path to the full-pool refit checkpoint
     """
     training_start = time.perf_counter()
     set_seed(seed)
@@ -625,94 +625,34 @@ def train_final_model_with_internal_val(
     val_loader   = DataLoader(val_subset, batch_size=batch_size, shuffle=False,
                               num_workers=num_workers, pin_memory=True)
 
+    from dl_training_protocol import fit_with_f1_checkpoints, refit_full_pool
+    unfreeze = unfreeze_backbone
     model = build_model(num_classes).to(device)
-    criterion = nn.CrossEntropyLoss()
-
-    history = {"train_loss": [], "val_loss": [], "train_acc": [], "val_acc": []}
-
-    # Best-checkpoint tracking
-    best_val_acc = -1.0
-    best_path = out_dir / "bird_species_resnet18_FINAL_best.pth"
-
-    # Warmup
-    print("[FINAL TRAIN] Warmup: head only...")
-    # Head only
-    freeze_backbone(model)
-    opt_head = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr_head)
-
-    for epoch in range(1, warmup_epochs + 1):
-        print(f"\n[FINAL WARMUP EPOCH {epoch}/{warmup_epochs}]")
-        t0 = time.time()
-        tr_loss, tr_acc = train_one_epoch(model, train_loader, criterion, opt_head, device, "train")
-        va_loss, va_acc = eval_one_epoch(model, val_loader, criterion, device, "val")
-        dt = time.time() - t0
-
-        history["train_loss"].append(tr_loss)
-        history["val_loss"].append(va_loss)
-        history["train_acc"].append(tr_acc)
-        history["val_acc"].append(va_acc)
-
-        print(f"TrainLoss={tr_loss:.4f} TrainAcc={tr_acc*100:.2f}% | "
-              f"ValLoss={va_loss:.4f} ValAcc={va_acc*100:.2f}% | Time={dt:.1f}s")
-
-        if va_acc > best_val_acc:
-            best_val_acc = va_acc
-            torch.save({
-                "model_state_dict": model.state_dict(),
-                "class_names": class_names,
-                "best_val_acc": best_val_acc,
-                "history": history,
-            }, best_path)
-
-    ckpt = torch.load(best_path, map_location=device) # Checkpoint
-    model.load_state_dict(ckpt["model_state_dict"]) # ckpt["model_state_dict"] is the best path saved before (the best model so far)
-
-    # Fine-tune
-    print("\n[FINAL TRAIN] Fine-tune: full network...")
-    unfreeze_backbone(model)
-    opt_full = optim.Adam(model.parameters(), lr=lr_finetune)
-
-    for epoch in range(1, finetune_epochs + 1):
-        global_epoch = warmup_epochs + epoch
-        print(f"\n[FINAL FINETUNE EPOCH {epoch}/{finetune_epochs}] (Global epoch {global_epoch})")
-        t0 = time.time()
-        tr_loss, tr_acc = train_one_epoch(model, train_loader, criterion, opt_full, device, "train")
-        va_loss, va_acc = eval_one_epoch(model, val_loader, criterion, device, "val")
-        dt = time.time() - t0
-
-        history["train_loss"].append(tr_loss)
-        history["val_loss"].append(va_loss)
-        history["train_acc"].append(tr_acc)
-        history["val_acc"].append(va_acc)
-
-        print(f"TrainLoss={tr_loss:.4f} TrainAcc={tr_acc*100:.2f}% | "
-              f"ValLoss={va_loss:.4f} ValAcc={va_acc*100:.2f}% | Time={dt:.1f}s")
-
-        if va_acc > best_val_acc:
-            best_val_acc = va_acc
-            torch.save({
-                "model_state_dict": model.state_dict(),
-                "class_names": class_names,
-                "best_val_acc": best_val_acc,
-                "history": history,
-            }, best_path)
-
-    print(f"\n[FINAL TRAIN] Best ValAcc: {best_val_acc*100:.2f}%")
-    plot_curves(history, out_dir, prefix="FINAL")
-    finish_dl_training(model, best_path, val_loader, device, {
-        "seed": seed, "batch_size": batch_size, "warmup_epochs": warmup_epochs,
-        "finetune_epochs": finetune_epochs, "lr_head": lr_head,
-        "lr_finetune": lr_finetune, "internal_val_ratio": val_ratio,
-        "device": device, "balance_train": balance_train,
+    selection_path = out_dir / "selection" / "best_macro_f1.pth"
+    checkpoint, history = fit_with_f1_checkpoints(
+        model, train_loader, val_loader, class_names, selection_path,
+        warmup_epochs, finetune_epochs, lr_head, lr_finetune, device,
+        freeze_backbone, unfreeze, train_one_epoch,
+    )
+    plot_curves(history, out_dir, prefix="FINAL_SELECTION")
+    settings = {
+        "internal_val_ratio": val_ratio, "internal_train_samples": len(train_subset),
+        "internal_validation_samples": len(val_subset),
+        "selection_seconds": time.perf_counter() - training_start,
         "shared_training_pool_id": pool_info["training_pool_id"] if pool_info else None,
-        "augmentation_id": getattr(train_subset, "augmentation_id", None),
+        "augmentation_id": getattr(development, "augmentation_id", None),
         "validation_protocol": "pooled_rows_after_augmentation_v1",
-        "training_seconds": time.perf_counter() - training_start,
-        "train_samples": len(train_loader.dataset), "validation_samples": len(val_loader.dataset),
-        "balance_mode": balance_mode,
-        "fine_tuned_internal_layers": locals().get("selected_layers", "all"),
-    })
-    return best_path
+        "selection_checkpoint": str(selection_path.resolve()),
+        "fine_tuning_mode": "full",
+        "selection_warmup_budget": warmup_epochs,
+        "selection_finetune_budget": finetune_epochs,
+    }
+    return refit_full_pool(
+        development, class_names, checkpoint, out_dir / "bird_species_resnet18_FINAL_best.pth",
+        seed=seed, batch_size=batch_size, num_workers=num_workers, device=device,
+        lr_head=lr_head, lr_finetune=lr_finetune, build_model=build_model, set_seed=set_seed,
+        freeze=freeze_backbone, unfreeze=unfreeze, train_epoch=train_one_epoch, settings=settings,
+    )
 
 
 # ----------------------------
@@ -768,7 +708,7 @@ def run_kfold_on_train(
         # Pool rows for inner checkpoint selection, but keep the outer originals unseen.
         development = dl_development_pool(ds_train_tf, tr_idx, pool_manifest_path, out_dir)
         inner_train, inner_val = stratified_train_val_split(
-            np.asarray(development.targets), 0.15, seed + fold_i)
+            np.asarray(development.targets), 0.20, seed + fold_i)
         tr_subset = Subset(development, inner_train.tolist())
         tr_subset.augmentation_id = getattr(development, "augmentation_id", None)
         va_subset = Subset(development, inner_val.tolist())
@@ -782,47 +722,16 @@ def run_kfold_on_train(
         va_loader = DataLoader(va_subset, batch_size=batch_size, shuffle=False,
                                num_workers=num_workers, pin_memory=True)
 
+        from dl_training_protocol import fit_with_f1_checkpoints
         model = build_model(num_classes).to(device)
-        criterion = nn.CrossEntropyLoss()
-
-        history = {"train_loss": [], "val_loss": [], "train_acc": [], "val_acc": []}
-        best_val_acc = -1.0
         best_path = out_dir / f"kfold_best_fold_{fold_i}.pth"
-
-        # Warmup
-        freeze_backbone(model)
-        opt_head = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr_head)
-        for epoch in range(1, warmup_epochs + 1):
-            tr_loss, tr_acc = train_one_epoch(model, tr_loader, criterion, opt_head, device, "train")
-            va_loss, va_acc = eval_one_epoch(model, va_loader, criterion, device, "val")
-            history["train_loss"].append(tr_loss); history["val_loss"].append(va_loss)
-            history["train_acc"].append(tr_acc);   history["val_acc"].append(va_acc)
-            if va_acc > best_val_acc:
-                best_val_acc = va_acc
-                torch.save({"model_state_dict": model.state_dict(),
-                            "class_names": class_names,
-                            "best_val_acc": best_val_acc,
-                            "fold": fold_i}, best_path)
-
-
-        # After warmup: reload BEST warmup weights before fine-tuning
-        ckpt = torch.load(best_path, map_location=device)
-        model.load_state_dict(ckpt["model_state_dict"])
-
-        # Finetune
-        unfreeze_backbone(model)
-        opt_full = optim.Adam(model.parameters(), lr=lr_finetune)
-        for epoch in range(1, finetune_epochs + 1):
-            tr_loss, tr_acc = train_one_epoch(model, tr_loader, criterion, opt_full, device, "train")
-            va_loss, va_acc = eval_one_epoch(model, va_loader, criterion, device, "val")
-            history["train_loss"].append(tr_loss); history["val_loss"].append(va_loss)
-            history["train_acc"].append(tr_acc);   history["val_acc"].append(va_acc)
-            if va_acc > best_val_acc:
-                best_val_acc = va_acc
-                torch.save({"model_state_dict": model.state_dict(),
-                            "class_names": class_names,
-                            "best_val_acc": best_val_acc,
-                            "fold": fold_i}, best_path)
+        checkpoint, history = fit_with_f1_checkpoints(
+            model, tr_loader, va_loader, class_names, best_path,
+            warmup_epochs, finetune_epochs, lr_head, lr_finetune, device,
+            freeze_backbone, unfreeze_backbone, train_one_epoch,
+        )
+        best_val_acc = checkpoint["selection_metrics"]["accuracy"]
+        best_val_f1_macro = checkpoint["selection_metrics"]["f1_macro"]
 
         plot_curves(history, out_dir, prefix=f"KFold_F{fold_i}")
         checkpoint = torch.load(best_path, map_location=device)
@@ -847,19 +756,19 @@ def run_kfold_on_train(
         pd.DataFrame({"sample_key": keys, "true_label": outer_truth,
                       "predicted_label": outer_pred}).to_csv(
                           out_dir / f"outer_predictions_fold_{fold_i}.csv", index=False)
-        fold_rows.append({"fold": fold_i, "best_val_acc": best_val_acc, "best_model_path": str(best_path.resolve())})
-        print(f"[K-FOLD] Fold {fold_i} best ValAcc: {best_val_acc*100:.2f}%")
+        fold_rows.append({"fold": fold_i, "best_val_acc": best_val_acc, "best_val_f1_macro": best_val_f1_macro, "best_model_path": str(best_path.resolve())})
+        print(f"[K-FOLD] Fold {fold_i} selected macro-F1: {best_val_f1_macro:.4f}")
 
     df = pd.DataFrame(fold_rows)
     df.to_csv(out_dir / "kfold_summary.csv", index=False)
     pd.concat([pd.read_csv(out_dir / f"outer_fold_{i}.csv") for i in range(1, k + 1)],
               ignore_index=True).to_csv(out_dir / "outer_cv_scores.csv", index=False)
     plot_outer_scores(pd.read_csv(out_dir / "outer_cv_scores.csv"), out_dir / "outer_cv_scores.png")
-    accs = df["best_val_acc"].to_numpy()
+    accs = df["best_val_f1_macro"].to_numpy()
     mean_acc = accs.mean()
     std_acc = accs.std(ddof=1) if len(accs) > 1 else 0.0
     print("\n" + "=" * 60)
-    print(f"[K-FOLD SUMMARY] K={k} | Mean±Std best ValAcc = {mean_acc*100:.2f}% ± {std_acc*100:.2f}%")
+    print(f"[K-FOLD SUMMARY] K={k} | Mean±Std selected macro-F1 = {mean_acc*100:.2f}% ± {std_acc*100:.2f}%")
     print(f"[K-FOLD SUMMARY] Saved: {str((out_dir / 'kfold_summary.csv').resolve())}")
 
 
@@ -907,6 +816,9 @@ def evaluate_on_test(
         balance_mode=balance_mode,
         dataset_name="TEST",
     )
+    if balance_test and balance_mode == "undersample":
+        from shared_test_pool import imagefolder_metadata, matched_test_indices
+        selected_idx = matched_test_indices(imagefolder_metadata(test_ds), seed, out_dir)
     test_subset = Subset(test_ds, selected_idx.tolist())
     test_loader = DataLoader(test_subset, batch_size=batch_size, shuffle=False,
                              num_workers=num_workers, pin_memory=True)
@@ -953,7 +865,8 @@ def evaluate_on_test(
 # ----------------------------
 # MAIN
 # ----------------------------
-def main():
+def legacy_main():
+    """Historical outer-CV + holdout workflow; not the command-line default."""
     # ----------------------------
     # Update these two paths
     # ----------------------------
@@ -981,7 +894,7 @@ def main():
     finetune_epochs = 5
     lr_head = 1e-3
     lr_finetune = 1e-4
-    val_ratio = 0.15  # internal val split for the FINAL model
+    val_ratio = 0.20  # selects a schedule before the full-pool refit
     balance_train = True
     balance_test = True
     balance_mode = "undersample"
@@ -1051,6 +964,12 @@ def main():
         balance_mode=balance_mode,
         seed=SEED,
     )
+
+
+def main(argv=None):
+    import sys
+    from dl_cv_workflow import run_training_cli
+    return run_training_cli(sys.modules[__name__], "full", argv)
 
 
 if __name__ == "__main__":

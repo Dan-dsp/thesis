@@ -42,10 +42,15 @@ class PipelineRunnerTests(unittest.TestCase):
         stages = runner.build_stages(runner.parse_args(["--full", "--with-statistics"]))
         self.assertEqual(len(stages), 11)
         statistical = [s for s in stages if s.arguments[0] == "thesis_validation.py"]
-        self.assertEqual(len(statistical), 3)
+        self.assertEqual(len(statistical), 2)
         self.assertEqual(statistical[0].arguments[1], "sl-cv")
         self.assertIn("sl_nested_cv", statistical[1].arguments[2])
-        self.assertTrue(all("resnet18" in arg for arg in statistical[2].arguments[2:4]))
+        selection = [s for s in stages if s.arguments[0] == "dl_cv_workflow.py"]
+        self.assertEqual(len(selection), 1)
+        self.assertTrue(all("cv_selection" in arg for arg in selection[0].arguments[1:3]))
+        full, partial = runner.checkpoint_paths(runner.parse_args([]))
+        self.assertEqual(full.parent.parent.parent, runner.ROOT.parent)
+        self.assertEqual(partial.parent.parent.parent, runner.ROOT.parent)
 
     def test_incompatible_modes_fail(self):
         for arguments in [["--full", "--reports-only"],

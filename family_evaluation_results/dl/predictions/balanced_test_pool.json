@@ -1,0 +1,22 @@
+{
+  "protocol": "sl_reference_order_test_v1",
+  "seed": 42,
+  "reference_csv": "F:\\01_Univalle\\01_TG\\dataset_features\\shallow_learning_birds.csv",
+  "source_images": 149,
+  "selected_images": 132,
+  "test_pool_id": "2b28bdf3e2112d904c25acafb63db431e1ee4364fafb23a7023175e3489b6baa",
+  "class_counts": {
+    "anisognathus_somptuosus": 11,
+    "chlorophanes_spiza": 11,
+    "colibri_delphinae": 11,
+    "florisuga_mellivora": 11,
+    "myioborus_miniatus": 11,
+    "ocreatus_underwoodii": 11,
+    "ramphocelus_flamigerus": 11,
+    "setophaga_fusca": 11,
+    "stilpnia_vitriolina": 11,
+    "tangara_arthus": 11,
+    "turdus_ignobilis": 11,
+    "zonotrichia_capensis": 11
+  }
+}

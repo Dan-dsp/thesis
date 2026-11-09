@@ -2,9 +2,15 @@
 
 Every run now exports full-test raw per-image predictions under each family's
 `predictions/` folder and automatically creates `image_error_analysis/`, including
-an image gallery and shared-error matrix. Optional balanced metric tables remain
+an image gallery and shared-error matrix. Default balanced metric tables remain
 separate from these full-test audits. Rejection is not used for this report.
 See [Image Error Analysis](image_error_analysis.md).
+
+Metrics now use the same 132 image identities for SL and DL, anchored to the
+existing SL sampler. `--no-balance-test` requests all-image metrics instead.
+Full prediction audits retain 149 images. See [Matched Test Pool](shared_test_pool.md).
+For the new 80/20 macro-F1/refit protocol, rerun both DL trainers before reporting;
+historical DL checkpoints do not become full-pool refits by loading them here.
 
 Use `--dl-full-model` or `--dl-partial-model` to select saved DL checkpoints
 explicitly, including historical folders, without editing code or retraining.

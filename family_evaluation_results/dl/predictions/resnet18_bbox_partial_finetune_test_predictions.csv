@@ -33,10 +33,10 @@ colibri_delphinae/ML640806254_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\coli
 colibri_delphinae/ML640806254_b1.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\colibri_delphinae\ML640806254_b1.jpg,DL,resnet18_bbox_partial_finetune,colibri_delphinae,colibri_delphinae,True
 colibri_delphinae/ML641740308_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\colibri_delphinae\ML641740308_b0.jpg,DL,resnet18_bbox_partial_finetune,colibri_delphinae,colibri_delphinae,True
 colibri_delphinae/ML641823015_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\colibri_delphinae\ML641823015_b0.jpg,DL,resnet18_bbox_partial_finetune,colibri_delphinae,colibri_delphinae,True
-colibri_delphinae/ML641964967_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\colibri_delphinae\ML641964967_b0.jpg,DL,resnet18_bbox_partial_finetune,colibri_delphinae,colibri_delphinae,True
+colibri_delphinae/ML641964967_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\colibri_delphinae\ML641964967_b0.jpg,DL,resnet18_bbox_partial_finetune,colibri_delphinae,turdus_ignobilis,False
 colibri_delphinae/ML642107743_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\colibri_delphinae\ML642107743_b0.jpg,DL,resnet18_bbox_partial_finetune,colibri_delphinae,colibri_delphinae,True
 florisuga_mellivora/ML641021685_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\florisuga_mellivora\ML641021685_b0.jpg,DL,resnet18_bbox_partial_finetune,florisuga_mellivora,florisuga_mellivora,True
-florisuga_mellivora/ML641185476_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\florisuga_mellivora\ML641185476_b0.jpg,DL,resnet18_bbox_partial_finetune,florisuga_mellivora,ocreatus_underwoodii,False
+florisuga_mellivora/ML641185476_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\florisuga_mellivora\ML641185476_b0.jpg,DL,resnet18_bbox_partial_finetune,florisuga_mellivora,florisuga_mellivora,True
 florisuga_mellivora/ML641185476_b1.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\florisuga_mellivora\ML641185476_b1.jpg,DL,resnet18_bbox_partial_finetune,florisuga_mellivora,florisuga_mellivora,True
 florisuga_mellivora/ML641185477_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\florisuga_mellivora\ML641185477_b0.jpg,DL,resnet18_bbox_partial_finetune,florisuga_mellivora,florisuga_mellivora,True
 florisuga_mellivora/ML641247047_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\florisuga_mellivora\ML641247047_b0.jpg,DL,resnet18_bbox_partial_finetune,florisuga_mellivora,ocreatus_underwoodii,False
@@ -61,7 +61,7 @@ myioborus_miniatus/ML641701561_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\myi
 myioborus_miniatus/ML641819643_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\myioborus_miniatus\ML641819643_b0.jpg,DL,resnet18_bbox_partial_finetune,myioborus_miniatus,myioborus_miniatus,True
 myioborus_miniatus/ML642107737_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\myioborus_miniatus\ML642107737_b0.jpg,DL,resnet18_bbox_partial_finetune,myioborus_miniatus,myioborus_miniatus,True
 ocreatus_underwoodii/ML638514480_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\ocreatus_underwoodii\ML638514480_b0.jpg,DL,resnet18_bbox_partial_finetune,ocreatus_underwoodii,ocreatus_underwoodii,True
-ocreatus_underwoodii/ML638747115_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\ocreatus_underwoodii\ML638747115_b0.jpg,DL,resnet18_bbox_partial_finetune,ocreatus_underwoodii,florisuga_mellivora,False
+ocreatus_underwoodii/ML638747115_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\ocreatus_underwoodii\ML638747115_b0.jpg,DL,resnet18_bbox_partial_finetune,ocreatus_underwoodii,ocreatus_underwoodii,True
 ocreatus_underwoodii/ML638831235_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\ocreatus_underwoodii\ML638831235_b0.jpg,DL,resnet18_bbox_partial_finetune,ocreatus_underwoodii,ocreatus_underwoodii,True
 ocreatus_underwoodii/ML639035750_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\ocreatus_underwoodii\ML639035750_b0.jpg,DL,resnet18_bbox_partial_finetune,ocreatus_underwoodii,ocreatus_underwoodii,True
 ocreatus_underwoodii/ML639710121_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\ocreatus_underwoodii\ML639710121_b0.jpg,DL,resnet18_bbox_partial_finetune,ocreatus_underwoodii,ocreatus_underwoodii,True
@@ -122,7 +122,7 @@ tangara_arthus/ML640811137_b1.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\tangara
 tangara_arthus/ML640850193_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\tangara_arthus\ML640850193_b0.jpg,DL,resnet18_bbox_partial_finetune,tangara_arthus,tangara_arthus,True
 tangara_arthus/ML641900789_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\tangara_arthus\ML641900789_b0.jpg,DL,resnet18_bbox_partial_finetune,tangara_arthus,tangara_arthus,True
 tangara_arthus/ML641993510_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\tangara_arthus\ML641993510_b0.jpg,DL,resnet18_bbox_partial_finetune,tangara_arthus,tangara_arthus,True
-tangara_arthus/ML642314210_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\tangara_arthus\ML642314210_b0.jpg,DL,resnet18_bbox_partial_finetune,tangara_arthus,tangara_arthus,True
+tangara_arthus/ML642314210_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\tangara_arthus\ML642314210_b0.jpg,DL,resnet18_bbox_partial_finetune,tangara_arthus,setophaga_fusca,False
 tangara_arthus/ML642319667_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\tangara_arthus\ML642319667_b0.jpg,DL,resnet18_bbox_partial_finetune,tangara_arthus,tangara_arthus,True
 tangara_arthus/ML642372012_b0.jpg,F:\01_Univalle\01_TG\dataset_bbox\test\tangara_arthus\ML642372012_b0.jpg,DL,resnet18_bbox_partial_finetune,tangara_arthus,tangara_arthus,True
 turdus_ignobilis/ML639064581_b0.jpeg,F:\01_Univalle\01_TG\dataset_bbox\test\turdus_ignobilis\ML639064581_b0.jpeg,DL,resnet18_bbox_partial_finetune,turdus_ignobilis,turdus_ignobilis,True

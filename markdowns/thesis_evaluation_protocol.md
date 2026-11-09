@@ -100,10 +100,12 @@ This is an empirical validation target, not a guaranteed test accuracy or out-of
 
 SL thresholds use the train-only model's internal validation before the final full-train refit.
 Refitting can change confidence; evaluate resulting coverage drift without retuning on test.
-DL thresholds use the selected final checkpoint on its internal validation. The validation
-data also selected the checkpoint, so confidence calibration claims require another held-out set.
+DL now selects a schedule on 20% internal validation using macro-F1, then refits
+fresh weights on all training rows. Rejection is disabled for those final weights:
+the selection model's threshold is not transferable without independent calibration.
+See [DL Training Protocol](dl_training_protocol.md) and [Matched Test Pool](shared_test_pool.md).
 SL selected_model.json selects by internal-validation macro-F1, including the best dataset
-variant at batch level. DL candidates all support rejection; identify the best DL configuration
+variant at batch level. DL inference supports rejection when calibrated; identify the best DL configuration
 using new DL outer-CV summaries rather than test accuracy.
 
 predict_sl_with_rejection.py accepts a selected_model.json and a feature CSV and writes

@@ -10,6 +10,11 @@ augmentation, training epochs, cross-validation, checkpoints and output folders.
 
 | File | Role | Pipeline status |
 | --- | --- | --- |
+| `rerun_dl_workflow.py` | [One-command DL retraining and SL/DL reports](dl_cv_workflow.md) | Current DL refresh entrypoint |
+| `dl_cv_workflow.py` | [Five mixed folds, mean epoch schedule and fresh refit](dl_cv_workflow.md) | Current default DL protocol |
+| `dl_training_protocol.py` | [Macro-F1 checkpoints and full-pool refitting](dl_training_protocol.md) | Shared DL training |
+| `shared_test_pool.py` | [Identity-matched balanced testing](shared_test_pool.md) | SL and DL evaluation |
+| `audit_shared_test_pool.py` | [Proves test-cohort identity equality](shared_test_pool.md) | Read-only data audit |
 | `split_dataset.py` | Creates train/test image folders | Dataset preparation |
 | `rename_images_from_excel.py` | Renames image files from an Excel list | Dataset preparation |
 | `dl_transfer_learning_bird_classifier.py` | Full ResNet18 training and test evaluation | DL training |

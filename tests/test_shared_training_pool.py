@@ -108,6 +108,7 @@ class SharedTrainingPoolTests(unittest.TestCase):
             csv = root / "features.csv"
             frame.to_csv(csv, index=False)
             with patch("shared_training_pool.get_training_pool", return_value=pool_result), \
+                    patch("shared_test_pool.REFERENCE_CSV", csv), \
                     patch.object(training, "make_balanced_subset", wraps=training.make_balanced_subset) as balance:
                 df, X, y, _ = load_features_and_labels(str(csv), selection_split="train", pool_manifest_path=path)
                 data = training.load_split_dataset(str(csv), val_fraction=1 / 3, pool_manifest_path=path)
@@ -133,6 +134,7 @@ class SharedTrainingPoolTests(unittest.TestCase):
             spaces = {"tree": (Pipeline([("clf", DecisionTreeClassifier(random_state=42))]),
                                 {"clf__max_depth": [1]})}
             with patch("shared_training_pool.get_training_pool", return_value=pool_result), \
+                    patch("shared_test_pool.REFERENCE_CSV", csv), \
                     patch.object(training, "get_training_pool", return_value=pool_result), \
                     patch.object(training, "make_model_spaces", return_value=spaces), \
                     patch.object(training, "save_confusion_matrix"), patch.object(training, "tqdm", None):

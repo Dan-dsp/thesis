@@ -42,11 +42,11 @@ SL_BATCH_ROOT = Path(r"F:\01_Univalle\01_TG\sl_outputs_batch")
 
 DL_MODELS = {
     "resnet18_bbox_full_finetune": Path(
-        r"F:\01_Univalle\01_TG\01_Python\outputs_resnet18_thesis"
+        r"F:\01_Univalle\01_TG\outputs_resnet18_thesis"
         r"\final_train\bird_species_resnet18_FINAL_best.pth"
     ),
     "resnet18_bbox_partial_finetune": Path(
-        r"F:\01_Univalle\01_TG\01_Python\outputs_resnet18_thesis_partial_finetune"
+        r"F:\01_Univalle\01_TG\outputs_resnet18_thesis_partial_finetune"
         r"\final_train\bird_species_resnet18_FINAL_best.pth"
     ),
 }
@@ -230,7 +230,9 @@ def evaluate_dl_model(
         ])
         save_image_predictions(audit_dir / f"{model_name}_test_predictions.csv",
                                "DL", model_name, metadata, y_true, y_pred)
-    selected = (balanced_indices(np.asarray(test_dataset.targets), seed=seed) if balance_test
+    from shared_test_pool import imagefolder_metadata, matched_test_indices
+    selected = (matched_test_indices(imagefolder_metadata(test_dataset), seed=seed,
+                                     out_dir=audit_dir) if balance_test
                 else np.arange(len(y_true)))
     return compute_metrics("DL", model_name, y_true[selected], y_pred[selected], class_names)
 
@@ -319,7 +321,8 @@ def load_sl_test_data(
         )
 
     if balance_test:
-        selected = balanced_indices(y, seed=seed)
+        from shared_test_pool import matched_test_indices
+        selected = matched_test_indices(data, seed=seed)
         X = X[selected]
         y = y[selected]
         data = data.iloc[selected].reset_index(drop=True)
@@ -436,7 +439,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--balance-test",
-        action="store_true",
+        action=argparse.BooleanOptionalAction, default=True,
         help="Undersample each test set to the smallest class support before evaluation.",
     )
     parser.add_argument("--seed", type=int, default=42)
@@ -519,7 +522,9 @@ def main() -> None:
             seed=args.seed,
         )
         print(f"\n[INFO] SL test matrix: {X_test.shape}")
-        selected = (balanced_indices(y_test, seed=args.seed) if args.balance_test
+        from shared_test_pool import matched_test_indices
+        selected = (matched_test_indices(test_metadata, seed=args.seed,
+                                         out_dir=args.output_dir / "sl" / "predictions") if args.balance_test
                     else np.arange(len(y_test)))
 
         for model_name, model_path in sl_models.items():

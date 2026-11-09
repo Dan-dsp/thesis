@@ -146,7 +146,7 @@ held-out original images and their views excluded from fitting. Four SL families
 yield six paired statistical comparisons using corrected t-tests and Holm
 adjustment. This evidence concerns that experiment, not every exported variant.
 Final reports include test metrics, confusion matrices, settings, timings and
-image-level errors. The shared SL/DL report evaluates all 149 test images and
+image-level errors. The shared SL/DL report scores 132 matched test images, audits all 149, and
 loads the four SL models from the winning feature-variant run. It describes
 cross-family errors without performing a joint SL-versus-DL significance test.
 
@@ -247,8 +247,9 @@ cross-entropy loss. CUDA is used when available; otherwise CPU.
 
 | Training run | Repetitions | Warmup | Fine-tuning | Internal validation |
 | --- | ---: | ---: | ---: | --- |
-| Outer-CV model | 5, one per fold | 2 epochs | 3 epochs | 15% of the outer development pool |
-| Final model | 1 fresh fit | 3 epochs | 5 epochs | 15% of all 3,420 development rows |
+| Outer-CV model | 5, one per fold | 2 epochs | 3 epochs | 20% of the outer development pool |
+| Final selection | 1 fit | 3 epochs | 5 epochs | 20% of all 3,420 development rows |
+| Final refit | 1 fresh fit | Selected count | Selected count | None; all 3,420 rows used |
 
 An **epoch** is one pass over that run's fitting rows. After each epoch, the
 validation rows are evaluated without optimizer updates.
@@ -257,22 +258,24 @@ head is trained at learning rate 0.001. During **full fine-tuning**, all network
 weights become trainable, at learning rate 0.0001. Frozen weights do not imply
 that every BatchNorm running statistic is frozen while the model is in train mode.
 
-For the final fit: **2,907 fitting rows + 513 validation rows**. Rows are split
-after augmentation. The best validation-accuracy checkpoint is retained across
+For the final fit: **2,736 fitting rows + 684 validation rows**. Rows are split
+after augmentation. The best validation macro-F1 checkpoint is retained across
 warmup and fine-tuning; the best warmup checkpoint is reloaded before fine-tuning.
 An improvement replaces the checkpoint. Training still runs the configured
 epochs; this is checkpoint selection, not early stopping.
 
-**Important:** DL does not subsequently refit on all 3,420 rows. Its final
-checkpoint comes from the fitting/validation procedure above, and need not be
-the last epoch's weights or even a fine-tuning epoch's weights.
+**Final refit:** initialize a fresh pretrained model and train on all 3,420 rows
+using the macro-F1-selected warmup/fine-tuning epoch counts. Test scores never
+choose that schedule. A warmup-only winner produces a warmup-only refit.
+Weighted-F1 saves a secondary reference checkpoint, not the final schedule.
+See [DL Training Protocol](dl_training_protocol.md) for checkpoint and refit files.
 
 **Outputs:** `01_Python/outputs_resnet18_thesis/`, with:
 
 - `kfold_train_only/`: fold checkpoints, `outer_cv_scores.csv`, outer predictions,
   fold confusion matrices and learning curves.
-- `final_train/bird_species_resnet18_FINAL_best.pth`: the final selected model.
-- `final_train/FINAL_loss_curve.png` and `FINAL_acc_curve.png`: epoch histories.
+- `final_train/bird_species_resnet18_FINAL_best.pth`: the fresh full-pool refit model.
+- `final_train/FINAL_SELECTION_loss_curve.png` and `FINAL_SELECTION_acc_curve.png`: epoch histories.
 - `final_train/split_membership.csv`, pool/protocol records and `model_analysis.json`:
   reproducibility and architecture/training metadata.
 - `test_eval/`: test metrics, confusion matrix, report and prediction audit.
@@ -282,17 +285,18 @@ the last epoch's weights or even a fine-tuning epoch's weights.
 **Script:** `dl_transfer_learning_bird_classifier_partial_finetune.py`
 
 Repeat stage 4 with a separate ResNet18: five CV fits (2+3 epochs each), followed
-by one fresh final fit (3+5 epochs). Same pool, validation fraction and optimizer
+by selection (3+5 epochs) and a fresh full-pool refit. Same pool, validation fraction and optimizer
 learning rates. Fine-tuning updates the classifier head plus the last **four
 parameter-bearing internal modules**, not four entire ResNet blocks.
 
 **Outputs:** the same structure under
 `01_Python/outputs_resnet18_thesis_partial_finetune/`.
 
-Across both DL configurations there are **12 model fits**: ten CV fits and two
-final fits. Their epoch counts sum to **66** (2 x (5 x 5 + 8)). This is not one
-network trained for 66 epochs. CV uses a shorter training budget than the final
-models, so its scores describe that shorter training procedure.
+Across both DL configurations there are **14 model fits**: ten CV fits, two
+selection fits and two full-pool refits. Selection/CV total **66 epochs**;
+refits add their selected epoch counts (1 to 8 each). CV uses a shorter budget
+and evaluates inner-selected checkpoints without an outer-development refit,
+so its scores describe that shorter procedure, not the final refit procedure.
 
 ### 6. Select SL Features and Export 29 Variants
 
@@ -407,11 +411,11 @@ run containing the batch's validation-selected winner. This is **six evaluated
 models**, not all 116 SL models and not necessarily each SL family's separately
 best feature variant. No models are retrained here.
 
-The runner does not pass `--balance-test`, so these final family reports use all
-**149 untouched test images**. Training-script test summary metrics use their
-configured balanced subsets (currently 132 images, 11 per species); their full
-prediction audits and this final report retain the full test coverage. Always
-check the evaluation population before comparing numbers across folders.
+The runner passes `--balance-test`: final metrics and training-script summaries
+use the **same 132 untouched test images**, 11 per species. Full prediction audits
+retain all 149 images. Identity manifests prove matching, rather than equal counts
+alone. See [Matched Test Pool](shared_test_pool.md); `--no-balance-test` explicitly
+requests all-image metrics when running the comparison script directly.
 
 **Outputs:** `01_Python/family_evaluation_results/`:
 
@@ -434,12 +438,12 @@ do not redefine correctness for this shared-image report.
 
 | Procedure | Purpose | Are held-out source images separated from augmented fitting views? |
 | --- | --- | --- |
-| Ordinary SL 20% / DL 15% validation | Select settings/checkpoints | No: rows are split after pooling augmentation |
+| Ordinary SL 20% / DL 20% validation | Select settings/checkpoints | No: rows are split after pooling augmentation |
 | SL grid CV inside batch training | Tune settings for each exported feature list | No: ordinary mixed-row folds |
 | Independent outer CV | Assess a training procedure without using final test | Yes, for the recorded original-image identities |
 
 DL outer CV uses 912 originals plus their views for development, splits that
-2,736-row pool into **2,325 fitting + 411 internal-validation rows**, trains for
+2,736-row pool into **2,188 fitting + 548 internal-validation rows**, trains for
 2+3 epochs, then evaluates the selected checkpoint on the 228 outer originals.
 The inner checkpoint split can mix related views; the outer holdout cannot.
 

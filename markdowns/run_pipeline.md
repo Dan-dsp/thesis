@@ -1,5 +1,18 @@
 # run_pipeline.py
 
+> 2026-11-05: For DL-only retraining plus SL/DL reports, use
+> [rerun_dl_workflow.py](dl_cv_workflow.md). The full SL/DL launcher remains
+> available, but its DL stage now uses five mixed selection folds and mean-epoch
+> refits. DL comparisons are descriptive selection summaries, not outer-CV
+> significance tests. Default checkpoint paths now resolve at the project root.
+> Older DL holdout/outer-CV statements below describe the previous protocol.
+
+DL trainers now use 80/20 macro-F1 selection followed by fresh full-pool refits.
+The final comparison stage explicitly passes `--balance-test` to score the same
+132 test identities for both families. Full image-error audits retain 149 images.
+After running both DL trainers, `--reports-only` reuses the saved models; it does
+not retrain them. See [DL Training Protocol](dl_training_protocol.md).
+
 The default is now a complete SL/DL experiment rebuild, not SL-only refresh with
 old DL checkpoints. Run from `F:/01_Univalle/01_TG`:
 

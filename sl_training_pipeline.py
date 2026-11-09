@@ -458,6 +458,10 @@ def load_split_dataset(csv_path: str, val_fraction: float = 0.2, seed: int = 42,
     test_metadata = df.loc[test_mask, metadata_cols_present].reset_index(drop=True)
     filenames = test_metadata.get("orig_filename", pd.Series(absolute_test_indices.astype(str)))
     test_metadata["sample_key"] = test_metadata["species"].astype(str) + "/" + filenames.astype(str)
+    if pool_info is not None:
+        from shared_test_pool import matched_test_indices
+        cohort_indices = matched_test_indices(test_metadata, seed=seed)
+        X_test_balanced, y_test_balanced = X_test[cohort_indices], y_test[cohort_indices]
 
     # Requested row-level protocol: do not group original/augmented relatives.
     assert_all_finite("augmented training features", X_train_full)
@@ -750,6 +754,9 @@ def run_training_pipeline(
     data = load_split_dataset(data_csv_path, val_fraction=val_fraction, seed=seed,
                               pool_manifest_path=pool_manifest_path)
     save_pool_record(data["training_pool"], metadata_dir)
+    if data["training_pool"] is not None:
+        from shared_test_pool import matched_test_indices
+        matched_test_indices(data["test_metadata"], seed=seed, out_dir=metadata_dir)
     stage_elapsed = time.perf_counter() - stage_start
     stage_timings.append({"stage": "load_split_dataset", "seconds": stage_elapsed})
     print(f"[TIME] load_split_dataset: {format_seconds(stage_elapsed)}")

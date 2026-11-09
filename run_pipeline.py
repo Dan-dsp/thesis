@@ -54,9 +54,9 @@ def parse_args(argv=None):
 
 
 def checkpoint_paths(args, root=ROOT):
-    full = args.dl_full_model or root / "outputs_resnet18_thesis" / "final_train" / CHECKPOINT_NAME
+    full = args.dl_full_model or root.parent / "outputs_resnet18_thesis" / "final_train" / CHECKPOINT_NAME
     partial = (args.dl_partial_model or
-               root / "outputs_resnet18_thesis_partial_finetune" / "final_train" / CHECKPOINT_NAME)
+               root.parent / "outputs_resnet18_thesis_partial_finetune" / "final_train" / CHECKPOINT_NAME)
     return tuple((root / path).resolve() if not path.is_absolute() else path.resolve()
                  for path in (full, partial))
 
@@ -87,14 +87,15 @@ def build_stages(args, root=ROOT):
             Stage("SL within-family statistics", (
                 "thesis_validation.py", "compare", str(sl_cv / "outer_cv_scores.csv"),
                 "--out-dir", str(root.parent / "sl_statistics"))),
-            Stage("DL within-family statistics", (
-                "thesis_validation.py", "compare",
-                str(full.parent.parent / "kfold_train_only" / "outer_cv_scores.csv"),
-                str(partial.parent.parent / "kfold_train_only" / "outer_cv_scores.csv"),
-                "--out-dir", str(root.parent / "dl_statistics"))),
+            Stage("DL descriptive selection comparison (not outer-CV significance)", (
+                "dl_cv_workflow.py",
+                str(full.parent.parent / "cv_selection" / "fold_scores.csv"),
+                str(partial.parent.parent / "cv_selection" / "fold_scores.csv"),
+                "--out-dir", str(root.parent / "dl_selection_comparison"))),
         ])
     stages.append(Stage("Family reports and shared-image error gallery", (
-        "compare_dl_sl_models.py", "--dl-full-model", str(full), "--dl-partial-model", str(partial))))
+        "compare_dl_sl_models.py", "--dl-full-model", str(full), "--dl-partial-model", str(partial),
+        "--balance-test")))
     return stages
 
 

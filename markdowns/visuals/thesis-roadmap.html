@@ -96,9 +96,9 @@
           ['Architecture','ImageNet-pretrained ResNet18; all weights fine-tuned after warmup'],
           ['Outer CV first','5 fresh fits; each 2 warmup + 3 fine-tuning epochs'],
           ['Final fit','1 fresh fit; 3 warmup + 5 fine-tuning epochs'],
-          ['Final split','2,907 fitting + 513 validation rows (15%)'],
+          ['Final split','2,736 fitting + 684 validation rows (20%)'],
           ['Optimizer','Adam; head LR 0.001, fine-tuning LR 0.0001; batch 32'],
-          ['Checkpoint','Best validation accuracy across epochs; no full-pool refit'],
+          ['Checkpoint','Macro-F1 selection, secondary weighted-F1; fresh refit on all 3,420 rows'],
           ['Output','01_Python/outputs_resnet18_thesis/: kfold_train_only, final_train, test_eval'],
           ['Caution','Internal validation can mix related views; outer holdout excludes their views']
         ]},
@@ -106,9 +106,9 @@
           ['Architecture','ResNet18; head + last four parameter-bearing internal modules fine-tuned'],
           ['Outer CV first','5 fresh fits; each 2 warmup + 3 fine-tuning epochs'],
           ['Final fit','1 fresh fit; 3 warmup + 5 fine-tuning epochs'],
-          ['Final split','2,907 fitting + 513 validation rows (15%)'],
-          ['Checkpoint','Best validation accuracy; no full-pool refit'],
-          ['Both DL runs','12 fits; 66 aggregate epochs, not one 66-epoch model'],
+          ['Final split','2,736 fitting + 684 validation rows (20%)'],
+          ['Checkpoint','Macro-F1 selection, secondary weighted-F1; fresh refit on all 3,420 rows'],
+          ['Both DL runs','14 fits; 66 selection/CV epochs plus two validation-selected refits'],
           ['Output','01_Python/outputs_resnet18_thesis_partial_finetune/']
         ]},
         {title:'SL feature selection: 29 variants', script:'sl_feature_comparison.py', rows:[
@@ -156,13 +156,13 @@
         ]},
         {title:'Test predictions + shared errors', script:'compare_dl_sl_models.py', rows:[
           ['Models','2 final DL checkpoints + 4 SL models from the winning feature-variant run'],
-          ['Test set','All 149 originals; no augmentation; no training'],
+          ['Test set','132 matched originals for metrics; all 149 for error audits'],
           ['Identity','Same species/filename keys join SL and DL predictions'],
           ['Analysis','Correct/incorrect per image; shared errors; species and confusion patterns'],
           ['Output','01_Python/family_evaluation_results/: sl, dl, image_error_analysis'],
           ['Visual report','image_error_analysis/error_gallery.html'],
           ['Interpretation','Raw predictions, without rejection; conditions need annotation'],
-          ['Metric population','Final report: 149; training-script balanced summaries: 132']
+          ['Metric population','Final report and training summaries: same 132 identities; audits: 149']
         ]},
         {title:'SL: Introduction', script:'Methodology proposed solution for Shallow Learning', rows:[
           ['Objective','Assign each bird crop to one of 12 species using measurable visual descriptors.'],
@@ -215,7 +215,7 @@
           ['116 final models','29 feature variants x 4 model families, with XGBoost installed. There are no DL-style epochs, warmup or fine-tuning in this SL stage.'],
           ['Independent comparison','A separate MI-top-50 experiment uses five outer folds and five inner folds. Selection/tuning happen inside training folds; outer evaluation uses held-out originals without their views in fitting.'],
           ['Statistical analysis','Compare four SL models using paired outer macro-F1 scores: six comparisons, corrected paired t-tests and Holm adjustment. This does not validate all 29 variants or test SL against DL statistically.'],
-          ['Test and error analysis','Final family reporting evaluates all 149 test originals, matching correct/incorrect SL and DL predictions by image ID. Training-script balanced test summaries instead use 132 images.'],
+          ['Test and error analysis','Final metrics use the same 132 test identities in SL and DL. Error analysis retains all 149 originals, matching predictions by image ID.'],
           ['Reporting scope','Final comparison loads four SL models from the winning feature-variant run, not all 116. Save performance, confusion matrices, settings, timings and per-image errors under sl_outputs_batch/, sl_nested_cv/, sl_statistics/ and family_evaluation_results/.']
         ]}
       ];

@@ -203,6 +203,14 @@ too small for the logos and several pre-existing long URLs exceed the margins.
 These do not prevent a PDF build, but still require formatting review.
 
 FUTURE UPDATES
+2026-11-05 | Pending experimental evidence after the DL workflow redesign.
+Run rerun_dl_workflow.py to obtain the new five-fold mean-epoch refit results,
+then revise main.tex using actual outputs and draft paragraph markers. New
+mixed-row CV scores select checkpoints and can share augmentation parents;
+they must not replace independent outer scores in significance tests. Existing
+outer-CV statistics remain historical. If independent inferential comparisons
+are required, design a separate source-grouped evaluation before rerunning it.
+
 31. HIGH: Ordinary augmented-row validation shares parents with fitting.
 2026-10-20: saved manifests show 535 crop parents on both sides of the selected
 SL split and 439 on both sides of the DL split. This is the recorded pooled-row

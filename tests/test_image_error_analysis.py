@@ -153,7 +153,11 @@ class ImageErrorAnalysisTests(unittest.TestCase):
                 patch("compare_dl_sl_models.torch_load_checkpoint", return_value={
                     "class_names": ["a", "b"], "model_state_dict": {}}), \
                 patch("compare_dl_sl_models.datasets.ImageFolder", return_value=Images()), \
-                patch("compare_dl_sl_models.build_resnet18", return_value=torch.nn.Identity()):
+                patch("compare_dl_sl_models.build_resnet18", return_value=torch.nn.Identity()), \
+                patch("shared_test_pool.REFERENCE_CSV", Path(tmp) / "reference.csv"):
+            pd.DataFrame({"species": ["a", "a", "a", "b"],
+                          "orig_filename": [f"{i}.jpg" for i in range(4)],
+                          "split": ["test"] * 4}).to_csv(Path(tmp) / "reference.csv", index=False)
             result = evaluate_dl_model("resnet", Path("unused"), Path("unused"), "cpu", 2, 0,
                                        True, 42, audit_dir=Path(tmp))
             self.assertEqual(result.samples, 2)
